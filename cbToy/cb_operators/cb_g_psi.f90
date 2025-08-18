@@ -11,8 +11,9 @@
 ! local variables
   integer :: ivec, ig
   real(DP) :: x, denm
-  
+  !$acc  data deviceptr(eig,psi)  
   call start_clock('g_psi')
+  !$acc parallel loop collapse(2) 
   do ivec = 1, nvec
      do ig = 1, npw
         x = (ekin(ig) - eig(ivec))
@@ -20,6 +21,7 @@
         psi (ig, ivec) = psi (ig, ivec) / denm
      enddo
   enddo
+  !$acc end data 
   call stop_clock('g_psi')
 
  end subroutine cb_g_psi

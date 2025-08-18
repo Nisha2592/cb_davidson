@@ -157,5 +157,5 @@
   end do
   write (stdout,*) 'npwx =', npwx
   allocate ( igk(npwx), ekin(npwx), aux(npwx) )
-
+  !$acc enter data copyin(dfft, dfft%nl,dfft%nnr, igk) 
  end subroutine ggen

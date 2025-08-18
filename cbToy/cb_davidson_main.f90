@@ -10,7 +10,7 @@
 
    implicit none
    !
-   include 'laxlib.fh'
+   !include 'laxlib.fh'
    !
 ! local variables (used in the call to cegterg )
    logical, parameter :: gamma_only = .false. ! general k-point version
@@ -28,7 +28,7 @@
                                                     ! band group or at the parallelization level above.
 #endif
 !------------------------------------------------------------------------
-   external cb_h_psi, cb_s_psi, cb_g_psi
+   external my_h_psi, cb_h_psi, cb_s_psi, cb_g_psi
 !  subroutine cb_h_psi(npwx,npw,nvec,psi,hpsi)  computes H*psi
 !  subroutine cb_s_psi(npwx,npw,nvec,psi,spsi)  computes S*psi (if needed)
 !  subroutine cb_g_psi(npwx,npw,nvec,psi,eig)   computes G*psi -> psi
@@ -55,10 +55,12 @@
    if (use_overlap) write(*,*) '** TEST:  CB hamiltonian modified so as to need an overlap matrix **'
    overlap = use_overlap
 
+   allocate( evc(npwx,nbnd), eig(nbnd) )
+   !$acc enter data create(evc, eig)
    do current_k=1,nks
      call init_k
-     allocate( evc(npwx,nbnd), eig(nbnd) )
      call init_random_wfcs(npw,npwx,nbnd,evc)
+     !$acc update device(evc, igk) 
 
      call start_clock('davidson')
 !--- THIS IS THE RELEVANT CALL TO THE ROUTINE IN KS_Solvers/Davidson ------------------------------------------!
@@ -66,9 +68,11 @@
      write (stdout,*) 'ndiag', ndiag
      if (ndiag == 1) then
 #endif
-        call cegterg( cb_h_psi, cb_s_psi, overlap, cb_g_psi, &
+        !$acc host_data use_device(eig) 
+        call cegterg( my_h_psi, cb_s_psi, overlap, cb_g_psi, &
                       npw, npwx, nbnd, nbndx, npol, evc, ethr, &
                       eig, btype, notcnv, lrot, dav_iter, nhpsi )
+        !$acc end host_data 
 #if defined(__MPI)
      else
         call pcegterg(cb_h_psi, cb_s_psi, overlap, cb_g_psi, &
@@ -79,15 +83,17 @@
 !--------------------------------------------------------------------------------------------------------------!
 
      call stop_clock('davidson')
-     deallocate( evc )
-
+     !$acc update self(eig)
      if (energy_shift .and. current_k==1) ref=eig(4*ncell**3)
+     
      call write_bands(eig,ref)
      write (stdout,*) 'dav_iter, nhpsi, notcnv, ethr ', dav_iter, nhpsi, notcnv, ethr
 
-     deallocate( eig )
    end do
-
+   !$acc exit data delete(evc, eig)
+   !$acc exit data delete(dfft, dfft%nl, dfft%nnr, igk, vloc,fft_array) 
+   deallocate( eig )
+   deallocate( evc )
    call print_clock('davidson')
 
    call print_clock( 'cegterg' )

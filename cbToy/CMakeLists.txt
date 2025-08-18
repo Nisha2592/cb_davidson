@@ -11,7 +11,8 @@ target_link_libraries(cb_davidson
 	cb_lib
 	cb_ops
         qe_kssolver_davidson
-        qe_lax) 
+        qe_lax
+	qe_openacc_fortran) 
 
 
 set(src_checker
@@ -24,4 +25,16 @@ target_link_libraries(checker
 	PRIVATE
 	cb_lib
 	cb_ops)
+
+set(src_wrapper
+	my_h_psi_wrapper.f90)
+qe_add_executable(wrapper  "${src_wrapper}")
+set_target_properties(wrapper 
+	PROPERTIES
+	    OUTPUT_NAME wrapper.x)
+target_link_libraries(wrapper
+	PRIVATE
+	cb_lib
+	cb_ops
+	qe_openacc_fortran)
 

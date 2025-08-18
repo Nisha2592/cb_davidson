@@ -12,4 +12,5 @@ target_link_libraries(cb_ops
         qe_utilx
         qe_lax
 	PRIVATE
-        cb_lib)
+        cb_lib
+	qe_openacc_fortran)

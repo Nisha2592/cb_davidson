@@ -14,6 +14,7 @@
 
 ! allocate the fft grid for the potential and initialize to 0
 allocate ( vloc(dfft%nnr), fft_array(dfft%nnr) ) ; fft_array(:) =CMPLX(0.d0,0.d0)
+!$acc enter data create(vloc, fft_array) 
 ! fill the non-vanishing fourier components according to the CB definition
   do ig=1,ngm 
      if (ncell.ne.1) then
@@ -43,5 +44,6 @@ allocate ( vloc(dfft%nnr), fft_array(dfft%nnr) ) ; fft_array(:) =CMPLX(0.d0,0.d0
   call invfft ('Rho',fft_array,dfft)
 
    vloc(:) = REAL(fft_array(:))
+   !$acc update device(vloc) 
 
   end subroutine set_cb_potential
