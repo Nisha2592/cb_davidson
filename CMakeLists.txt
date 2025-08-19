@@ -640,12 +640,4 @@ add_custom_target(depgraph
 #   pw ph pp hp pwcond neb cp tddfpt gwl ld1 upf epw
 #   xspectra couple all_currents
 ###########################################################
-add_custom_target(pwall
-    DEPENDS
-        pw
-        ph
-        pp
-        pwcond
-        neb
-    COMMENT
-        "same as \"make pw ph pp pwcond neb\"")
+
