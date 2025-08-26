@@ -14,13 +14,18 @@
    !
 ! local variables (used in the call to cegterg )
    logical, parameter :: gamma_only = .false. ! general k-point version
-   complex(DP), allocatable :: evc(:,:)
-   real(dp), allocatable :: eig(:)
+   complex(DP), allocatable :: evc(:,:,:)
+   real(dp), allocatable :: eig(:,:)
    integer, parameter :: npol=1
+   integer, parameter :: nk_batch = 4 ! number of k-points in a batch
+
+
+   ! local variables
    integer :: notcnv, dav_iter, nhpsi
    logical :: overlap = .false. , lrot =.false.
 ! additional local variables
    real(dp) :: ref=0.d0
+   integer :: kblock, ik, n_in_batch
 #if defined(__MPI)
 ! local paralelization variables
    integer :: ndiag     ! input value of processors in the diagonalization group
@@ -55,41 +60,64 @@
    if (use_overlap) write(*,*) '** TEST:  CB hamiltonian modified so as to need an overlap matrix **'
    overlap = use_overlap
 
-   allocate( evc(npwx,nbnd), eig(nbnd) )
+   allocate( evc(npwx,nbnd, nk_batch), eig(nbnd, nk_batch) )
    !$acc enter data create(evc, eig)
-   do current_k=1,nks
-     call init_k
-     call init_random_wfcs(npw,npwx,nbnd,evc)
-     !$acc update device(evc, igk) 
 
-     call start_clock('davidson')
+   ! loop over k-points in group of 4
+   do kblock = 1, nks, nk_batch
+      n_in_batch = min(nk_batch, nks - kblock + 1)
+
+      ! Initialize batch
+      do ik = 1, n_in_batch
+         current_k = kblock + ik - 1
+         call init_k
+         call init_random_wfcs(npw,npwx,nbnd,evc(:,:,ik))
+     !$acc update device(evc(:,:,ik), igk)
+      end do
+
+      ! Solve each k-point concurrently
+      !$omp parallel
+      !$omp single
+      do ik = 1, n_in_batch
+         !$omp task
+         current_k = kblock + ik - 1
+
+         call init_k          ! recompute npw, igk for current_k
+         !$acc update device(igk) ! make the device se the correct igk
+         call start_clock('davidson')
+
 !--- THIS IS THE RELEVANT CALL TO THE ROUTINE IN KS_Solvers/Davidson ------------------------------------------!
 #if defined(__MPI)
      write (stdout,*) 'ndiag', ndiag
      if (ndiag == 1) then
 #endif
-        !$acc host_data use_device(eig) 
+        !$acc host_data use_device(eig(:,ik)) 
         call cegterg( my_h_psi, cb_s_psi, overlap, cb_g_psi, &
-                      npw, npwx, nbnd, nbndx, npol, evc, ethr, &
-                      eig, btype, notcnv, lrot, dav_iter, nhpsi )
+                      npw, npwx, nbnd, nbndx, npol, evc(:,:,ik), ethr, &
+                      eig(:,ik), btype, notcnv, lrot, dav_iter, nhpsi )
         !$acc end host_data 
 #if defined(__MPI)
      else
         call pcegterg(cb_h_psi, cb_s_psi, overlap, cb_g_psi, &
-                      npw, npwx, nbnd, nbndx, npol, evc, ethr, &
-                      eig, btype, notcnv, lrot, dav_iter, nhpsi )
+                      npw, npwx, nbnd, nbndx, npol, evc(:,:,ik), ethr, &
+                      eig(:,ik), btype, notcnv, lrot, dav_iter, nhpsi )
      end if
 #endif
+        !$omp end task
 !--------------------------------------------------------------------------------------------------------------!
 
      call stop_clock('davidson')
-     !$acc update self(eig)
-     if (energy_shift .and. current_k==1) ref=eig(4*ncell**3)
+     !$acc update self(eig(:,ik))
+     if (energy_shift .and. current_k==1) ref=eig(4*ncell**3, ik)
      
-     call write_bands(eig,ref)
+     call write_bands(eig(:,ik),ref)
      write (stdout,*) 'dav_iter, nhpsi, notcnv, ethr ', dav_iter, nhpsi, notcnv, ethr
 
    end do
+   !$omp end single
+   !$omp end parallel
+end do
+
    !$acc exit data delete(evc, eig)
    !$acc exit data delete(dfft, dfft%nl, dfft%nnr, igk, vloc,fft_array) 
    deallocate( eig )
