@@ -156,6 +156,6 @@
      npwx = max (npw, npwx)
   end do
   write (stdout,*) 'npwx =', npwx
-  allocate ( igk(npwx), ekin(npwx), aux(npwx) )
+  allocate ( igk(npwx,nks), ekin(npwx,nks), aux(npwx) )
   !$acc enter data copyin(dfft, dfft%nl,dfft%nnr, igk) 
  end subroutine ggen
