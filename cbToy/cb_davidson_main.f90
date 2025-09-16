@@ -17,7 +17,7 @@
    complex(DP), allocatable :: evc(:,:,:)
    real(dp), allocatable :: eig(:,:)
    integer, parameter :: npol=1
-   integer, parameter :: nk_batch = 4 ! number of k-points in a batch
+   integer, parameter :: nk_batch = 1 ! number of k-points in a batch
 
 
    ! local variables
@@ -25,7 +25,7 @@
    logical :: overlap = .false. , lrot =.false.
 ! additional local variables
    real(dp) :: ref=0.d0
-   integer :: kblock, ik, n_in_batch
+   integer :: kblock, ik, n_in_batch, local_k
 #if defined(__MPI)
 ! local paralelization variables
    integer :: ndiag     ! input value of processors in the diagonalization group
@@ -68,22 +68,26 @@
       n_in_batch = min(nk_batch, nks - kblock + 1)
 
       ! Initialize batch
-      do ik = 1, n_in_batch
-         current_k = kblock + ik - 1
-         call init_k
-         call init_random_wfcs(npw,npwx,nbnd,evc(:,:,ik))
-     !$acc update device(evc(:,:,ik), igk)
-      end do
+     ! do ik = 1, n_in_batch
+      !   current_k = kblock + ik - 1
+       !  call init_k
+        ! call init_random_wfcs(npw,npwx,nbnd,evc(:,:,ik))
+     !!$acc update device(evc(:,:,ik), igk)
+      !end do
 
       ! Solve each k-point concurrently
       !$omp parallel
       !$omp single
       do ik = 1, n_in_batch
-         !$omp task
-         current_k = kblock + ik - 1
+         !$omp task private(local_k)
+        
+         local_k = kblock + ik - 1 ! each task determines its own k-point index
 
-         call init_k          ! recompute npw, igk for current_k
-         !$acc update device(igk) ! make the device se the correct igk
+         
+         ! Initialise for this k-point   
+         call init_k(local_k)          ! recompute npw, igk for current_k
+         call init_random_wfcs(npw, npwx, nbnd, evc(:,:,ik))
+         !$acc update device(evc(:,:,ik), igk(:,ik)) ! send wavefunction and igk to device
          call start_clock('davidson')
 
 !--- THIS IS THE RELEVANT CALL TO THE ROUTINE IN KS_Solvers/Davidson ------------------------------------------!
@@ -103,15 +107,16 @@
                       eig(:,ik), btype, notcnv, lrot, dav_iter, nhpsi )
      end if
 #endif
-        !$omp end task
+        
 !--------------------------------------------------------------------------------------------------------------!
 
      call stop_clock('davidson')
      !$acc update self(eig(:,ik))
-     if (energy_shift .and. current_k==1) ref=eig(4*ncell**3, ik)
+     if (energy_shift .and. local_k==1) ref=eig(4*ncell**3, ik)
      
      call write_bands(eig(:,ik),ref)
      write (stdout,*) 'dav_iter, nhpsi, notcnv, ethr ', dav_iter, nhpsi, notcnv, ethr
+     !$omp end task
 
    end do
    !$omp end single
