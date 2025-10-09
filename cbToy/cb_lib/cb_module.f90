@@ -13,6 +13,7 @@ module cb_module
  integer :: stdout = 6    ! unit connected to standard output
 
  integer, parameter :: ncrystal = 15 
+ integer            :: nk_batches 
  character(len=4) :: crystal(ncrystal)
  real(DP) :: cb_alat(ncrystal)
  real(DP) :: vs3(ncrystal), vs8(ncrystal),vs11(ncrystal)
@@ -48,9 +49,9 @@ module cb_module
  LOGICAL  :: gamma_only_save ! .T. if it's a Gamma-point  calculation 
  REAl(DP), ALLOCATABLE :: g(:,:) ! reciprocal lattice vector list
  REAl(DP), ALLOCATABLE :: gg(:)  ! reciprocal lattice vector square moduli
- INTEGER, ALLOCATABLE  :: igk(:) ! index from the |k+g| ordered list to the |g|-ordered list
+ INTEGER, ALLOCATABLE  :: igk_batched(:,:), igk(:) ! index from the |k+g| ordered list to the |g|-ordered list
  REAl(DP), ALLOCATABLE :: xk(:,:)! k-point vector list
- REAl(DP), ALLOCATABLE :: ekin(:)! kinetic energy of the |k+g| ordered list
+ REAl(DP), ALLOCATABLE :: ekin_batched(:,:), ekin(:)! kinetic energy of the |k+g| ordered list
  REAl(DP), ALLOCATABLE :: vloc(:)! effective potential on the fft grid
  COMPLEX(DP), ALLOCATABLE :: fft_array(:) ! auxiliary array for the fft operations
  COMPLEX(DP), ALLOCATABLE :: aux(:) ! auxiliary array to be used in h_psi

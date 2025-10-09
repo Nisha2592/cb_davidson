@@ -21,6 +21,7 @@
    logical :: overlap = .false. , lrot =.false.
 ! additional local variables
    real(dp) :: ref=0.d0
+   integer :: i_batch, ik
 #if defined(__MPI)
 ! local paralelization variables
    integer :: ndiag     ! input value of processors in the diagonalization group
@@ -56,39 +57,48 @@
    overlap = use_overlap
 
    allocate( evc(npwx,nbnd), eig(nbnd) )
+   nk_batches = 1 
    !$acc enter data create(evc, eig)
-   do current_k=1,nks
-     call init_k
-     call init_random_wfcs(npw,npwx,nbnd,evc)
-     !$acc update device(evc, igk) 
+   do ik =1,nks, nk_batches
+     do i_batch = 1, min(nk_batches, nks - ik +1)   
+       current_k = ik + i_batch -1   
+       call init_k(current_k, i_batch) 
+     end do 
+     print *, "ciao ciao"
+     do i_batch =1, min(nk_batches, nks - ik +1 )  
+        current_k = ik + i_batch -1   
+        igk = igk_batched(:,i_batch) 
+        ekin = ekin_batched(:, i_batch) 
+        call init_random_wfcs(npw,npwx,nbnd,evc)
+        !$acc update device(evc, igk) 
 
-     call start_clock('davidson')
+        call start_clock('davidson')
 !--- THIS IS THE RELEVANT CALL TO THE ROUTINE IN KS_Solvers/Davidson ------------------------------------------!
 #if defined(__MPI)
-     write (stdout,*) 'ndiag', ndiag
-     if (ndiag == 1) then
+        write (stdout,*) 'ndiag', ndiag
+        if (ndiag == 1) then
 #endif
-        !$acc host_data use_device(eig) 
-        call cegterg( my_h_psi, cb_s_psi, overlap, cb_g_psi, &
+           !$acc host_data use_device(eig) 
+           call cegterg( my_h_psi, cb_s_psi, overlap, cb_g_psi, &
                       npw, npwx, nbnd, nbndx, npol, evc, ethr, &
                       eig, btype, notcnv, lrot, dav_iter, nhpsi )
-        !$acc end host_data 
+           !$acc end host_data 
 #if defined(__MPI)
-     else
-        call pcegterg(cb_h_psi, cb_s_psi, overlap, cb_g_psi, &
+        else
+           call pcegterg(cb_h_psi, cb_s_psi, overlap, cb_g_psi, &
                       npw, npwx, nbnd, nbndx, npol, evc, ethr, &
                       eig, btype, notcnv, lrot, dav_iter, nhpsi )
-     end if
+        end if
 #endif
 !--------------------------------------------------------------------------------------------------------------!
 
-     call stop_clock('davidson')
-     !$acc update self(eig)
-     if (energy_shift .and. current_k==1) ref=eig(4*ncell**3)
+        call stop_clock('davidson')
+        !$acc update self(eig)
+        if (energy_shift .and. current_k==1) ref=eig(4*ncell**3)
      
-     call write_bands(eig,ref)
-     write (stdout,*) 'dav_iter, nhpsi, notcnv, ethr ', dav_iter, nhpsi, notcnv, ethr
-
+        call write_bands(eig,ref)
+        write (stdout,*) 'dav_iter, nhpsi, notcnv, ethr ', dav_iter, nhpsi, notcnv, ethr
+     end do 
    end do
    !$acc exit data delete(evc, eig)
    !$acc exit data delete(dfft, dfft%nl, dfft%nnr, igk, vloc,fft_array) 
