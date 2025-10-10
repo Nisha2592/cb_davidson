@@ -12,7 +12,8 @@ target_link_libraries(cb_davidson
 	cb_ops
         qe_kssolver_davidson
         qe_lax
-	qe_openacc_fortran) 
+	qe_openacc_fortran
+	qe_openmp_fortran) 
 
 
 set(src_checker

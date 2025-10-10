@@ -50,7 +50,7 @@
 
    call init_clocks(.true.)
 
-   nk_batches = 1 
+   nk_batches = 4 
    allocate(npw_batched(nk_batches)) 
    call input(gamma_only)
    call ggen(gamma_only)
@@ -63,21 +63,21 @@
    allocate (evc(npwx, nbnd), eig(nbnd)) 
    !$acc enter data create(evc, eig)
    do ik =1,nks, nk_batches
-     !!$ omp taskloop default(shared) private(i_batch, current_k)
+     !$omp parallel default(shared) private(i_batch, current_k)
+     !$omp do
      do i_batch = 1, min(nk_batches, nks - ik +1)   
        print '("First loop, batch ",I5)', i_batch 
        current_k = ik + i_batch -1   
        call init_k(current_k, i_batch) 
        call init_random_wfcs(npw_batched(i_batch), npwx, nbnd, evc_batched(1,1,i_batch),i_batch)   
      end do 
-     !!$omp end taskloop
+     !$omp end parallel 
      do i_batch =1, min(nk_batches, nks - ik +1 )  
         print '("Second loop, batch ",I5)', i_batch 
         current_k = ik + i_batch -1   
         igk = igk_batched(:,i_batch) 
         ekin = ekin_batched(:, i_batch) 
         npw = npw_batched(i_batch) 
-        !call init_random_wfcs(npw,npwx,nbnd,evc)
         evc = evc_batched(:, :,i_batch) 
         !$acc update device(evc, igk) 
         
