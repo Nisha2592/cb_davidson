@@ -49,6 +49,9 @@
 #endif
 
    call init_clocks(.true.)
+
+   nk_batches = 4 
+   allocate(npw_batched(nk_batches)) 
    call input(gamma_only)
    call ggen(gamma_only)
    call set_cb_potential
@@ -57,22 +60,23 @@
    overlap = use_overlap
 
    allocate( evc(npwx,nbnd), eig(nbnd) )
-   nk_batches = 1 
    !$acc enter data create(evc, eig)
    do ik =1,nks, nk_batches
      do i_batch = 1, min(nk_batches, nks - ik +1)   
+       print '("First loop, batch ",I5)', i_batch 
        current_k = ik + i_batch -1   
        call init_k(current_k, i_batch) 
      end do 
-     print *, "ciao ciao"
      do i_batch =1, min(nk_batches, nks - ik +1 )  
+        print '("Second loop, batch ",I5)', i_batch 
         current_k = ik + i_batch -1   
         igk = igk_batched(:,i_batch) 
         ekin = ekin_batched(:, i_batch) 
+        npw = npw_batched(i_batch) 
         call init_random_wfcs(npw,npwx,nbnd,evc)
         !$acc update device(evc, igk) 
-
-        call start_clock('davidson')
+        
+                call start_clock('davidson')
 !--- THIS IS THE RELEVANT CALL TO THE ROUTINE IN KS_Solvers/Davidson ------------------------------------------!
 #if defined(__MPI)
         write (stdout,*) 'ndiag', ndiag

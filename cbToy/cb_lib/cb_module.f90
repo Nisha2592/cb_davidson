@@ -49,7 +49,8 @@ module cb_module
  LOGICAL  :: gamma_only_save ! .T. if it's a Gamma-point  calculation 
  REAl(DP), ALLOCATABLE :: g(:,:) ! reciprocal lattice vector list
  REAl(DP), ALLOCATABLE :: gg(:)  ! reciprocal lattice vector square moduli
- INTEGER, ALLOCATABLE  :: igk_batched(:,:), igk(:) ! index from the |k+g| ordered list to the |g|-ordered list
+ INTEGER, ALLOCATABLE  :: igk_batched(:,:), igk(:), & ! index from the |k+g| ordered list to the |g|-ordered list
+                          npw_batched(:) 
  REAl(DP), ALLOCATABLE :: xk(:,:)! k-point vector list
  REAl(DP), ALLOCATABLE :: ekin_batched(:,:), ekin(:)! kinetic energy of the |k+g| ordered list
  REAl(DP), ALLOCATABLE :: vloc(:)! effective potential on the fft grid
