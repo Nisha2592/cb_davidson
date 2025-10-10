@@ -14,8 +14,8 @@
    !
 ! local variables (used in the call to cegterg )
    logical, parameter :: gamma_only = .false. ! general k-point version
-   complex(DP), allocatable :: evc(:,:)
-   real(dp), allocatable :: eig(:)
+   complex(DP), allocatable :: evc(:,:), evc_batched(:,:,:) 
+   real(dp), allocatable :: eig(:), eig_batched(:,:) 
    integer, parameter :: npol=1
    integer :: notcnv, dav_iter, nhpsi
    logical :: overlap = .false. , lrot =.false.
@@ -50,7 +50,7 @@
 
    call init_clocks(.true.)
 
-   nk_batches = 4 
+   nk_batches = 1 
    allocate(npw_batched(nk_batches)) 
    call input(gamma_only)
    call ggen(gamma_only)
@@ -59,21 +59,26 @@
    if (use_overlap) write(*,*) '** TEST:  CB hamiltonian modified so as to need an overlap matrix **'
    overlap = use_overlap
 
-   allocate( evc(npwx,nbnd), eig(nbnd) )
+   allocate( evc_batched(npwx,nbnd,nk_batches), eig_batched(nbnd,nk_batches) )
+   allocate (evc(npwx, nbnd), eig(nbnd)) 
    !$acc enter data create(evc, eig)
    do ik =1,nks, nk_batches
+     !!$ omp taskloop default(shared) private(i_batch, current_k)
      do i_batch = 1, min(nk_batches, nks - ik +1)   
        print '("First loop, batch ",I5)', i_batch 
        current_k = ik + i_batch -1   
        call init_k(current_k, i_batch) 
+       call init_random_wfcs(npw_batched(i_batch), npwx, nbnd, evc_batched(1,1,i_batch),i_batch)   
      end do 
+     !!$omp end taskloop
      do i_batch =1, min(nk_batches, nks - ik +1 )  
         print '("Second loop, batch ",I5)', i_batch 
         current_k = ik + i_batch -1   
         igk = igk_batched(:,i_batch) 
         ekin = ekin_batched(:, i_batch) 
         npw = npw_batched(i_batch) 
-        call init_random_wfcs(npw,npwx,nbnd,evc)
+        !call init_random_wfcs(npw,npwx,nbnd,evc)
+        evc = evc_batched(:, :,i_batch) 
         !$acc update device(evc, igk) 
         
                 call start_clock('davidson')
