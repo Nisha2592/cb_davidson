@@ -54,8 +54,8 @@ module cb_module
  REAl(DP), ALLOCATABLE :: xk(:,:)! k-point vector list
  REAl(DP), ALLOCATABLE :: ekin_batched(:,:), ekin(:)! kinetic energy of the |k+g| ordered list
  REAl(DP), ALLOCATABLE :: vloc(:)! effective potential on the fft grid
- COMPLEX(DP), ALLOCATABLE :: fft_array(:) ! auxiliary array for the fft operations
- COMPLEX(DP), ALLOCATABLE :: aux(:) ! auxiliary array to be used in h_psi
+ COMPLEX(DP), ALLOCATABLE :: fft_array(:), fft_array_batched(:,:)  ! auxiliary array for the fft operations
+ COMPLEX(DP), ALLOCATABLE :: aux(:), aux_batched(:,:)  ! auxiliary array to be used in h_psi
   
 ! diagonalization related parameters
  INTEGER  :: david     ! davidson inflation limit
