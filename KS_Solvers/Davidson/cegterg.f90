@@ -11,13 +11,15 @@
 !   and now cegterg and regterg are used for both CPU and GPU execution.
 !   If you want to see the previous code checkout to commit: df3080b231c5daf52295c23501fbcaa9bfc4bfcc (on Thu Apr 21 06:18:02 2022 +0000)
 !
+! Modified for batched k-point processing
+!
 #define ZERO ( 0.D0, 0.D0 )
 #define ONE  ( 1.D0, 0.D0 )
 !
 !----------------------------------------------------------------------------
 SUBROUTINE cegterg( h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
                     npw, npwx, nvec, nvecx, npol, evc, ethr, &
-                    e, btype, notcnv, lrot, dav_iter, nhpsi )
+                    e, btype, notcnv, lrot, dav_iter, nhpsi, i_batch )
   !----------------------------------------------------------------------------
   !
   ! ... iterative solution of the eigenvalue problem:
@@ -47,7 +49,9 @@ SUBROUTINE cegterg( h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
     ! integer number of searched low-lying roots
     ! maximum dimension of the reduced basis set :
     !    (the basis set is refreshed when its dimension would exceed nvecx)
-    ! umber of spin polarizations
+    ! number of spin polarizations
+  INTEGER, INTENT(IN) :: i_batch
+    ! batch index for k-point batching
   COMPLEX(DP), INTENT(INOUT) :: evc(npwx*npol,nvec)
     !  evc contains the  refined estimates of the eigenvectors  
   REAL(DP), INTENT(IN) :: ethr
@@ -66,7 +70,7 @@ SUBROUTINE cegterg( h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
     ! integer number of iterations performed
     ! number of unconverged roots
   INTEGER, INTENT(OUT) :: nhpsi
-    ! total number of indivitual hpsi
+    ! total number of individual hpsi
   !
   ! ... LOCAL variables
   !
@@ -110,12 +114,12 @@ SUBROUTINE cegterg( h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
   !$acc routine(MYDDOT_VECTOR_GPU) vector
   !
   EXTERNAL  h_psi_ptr,    s_psi_ptr,    g_psi_ptr
-    ! h_psi_ptr(npwx,npw,nvec,psi,hpsi)
+    ! h_psi_ptr(npwx,npw,nvec,psi,hpsi,i_batch)
     !     calculates H|psi>
-    ! s_psi_ptr(npwx,npw,nvec,spsi)
+    ! s_psi_ptr(npwx,npw,nvec,spsi,i_batch)
     !     calculates S|psi> (if needed)
     !     Vectors psi,hpsi,spsi are dimensioned (npwx*npol,nvec)
-    ! g_psi_ptr(npwx,npw,notcnv,psi,e)
+    ! g_psi_ptr(npwx,npw,notcnv,psi,e,i_batch)
     !    calculates (diag(h)-e)^-1 * psi, diagonal approx. to (h-e)^-1*psi
     !    the first nvec columns contain the trial eigenvectors
   !
@@ -143,7 +147,7 @@ SUBROUTINE cegterg( h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
   END IF
   !
 #if ! defined(__CUDA)
-  ! compute the number of chuncks
+  ! compute the number of chunks
   numblock  = (npw+blocksize-1)/blocksize
 #endif
   !
@@ -190,11 +194,11 @@ SUBROUTINE cegterg( h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
   !
   ! ... hpsi contains h times the basis vectors
   !
-  CALL h_psi_ptr( npwx, npw, nvec, psi, hpsi ) ; nhpsi = nhpsi + nvec
+  CALL h_psi_ptr( npwx, npw, nvec, psi, hpsi, i_batch ) ; nhpsi = nhpsi + nvec
   !
   ! ... spsi contains s times the basis vectors
   !
-  IF ( uspp ) CALL s_psi_ptr( npwx, npw, nvec, psi, spsi )
+  IF ( uspp ) CALL s_psi_ptr( npwx, npw, nvec, psi, spsi, i_batch )
   !
   ! ... hc contains the projection of the hamiltonian onto the reduced 
   ! ... space vc contains the eigenvectors of hc
@@ -404,7 +408,7 @@ SUBROUTINE cegterg( h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
      !
      ! ... approximate inverse iteration
      !
-     CALL g_psi_ptr( npwx, npw, notcnv, npol, psi(1,nb1), ew(nb1) )
+     CALL g_psi_ptr( npwx, npw, notcnv, npol, psi(1,nb1), ew(nb1), i_batch )
      !$acc end host_data
      !
      ! ... "normalize" correction vectors psi(:,nb1:nbase+notcnv) in
@@ -463,9 +467,9 @@ SUBROUTINE cegterg( h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
      !
      ! ... here compute the hpsi and spsi of the new functions
      !
-     CALL h_psi_ptr( npwx, npw, notcnv, psi(1,nb1), hpsi(1,nb1) ) ; nhpsi = nhpsi + notcnv
+     CALL h_psi_ptr( npwx, npw, notcnv, psi(1,nb1), hpsi(1,nb1), i_batch ) ; nhpsi = nhpsi + notcnv
      !
-     IF ( uspp ) CALL s_psi_ptr( npwx, npw, notcnv, psi(1,nb1), spsi(1,nb1) )
+     IF ( uspp ) CALL s_psi_ptr( npwx, npw, notcnv, psi(1,nb1), spsi(1,nb1), i_batch )
      !
      ! ... update the reduced hamiltonian
      !
@@ -699,13 +703,12 @@ SUBROUTINE cegterg( h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
   RETURN
   !
 END SUBROUTINE cegterg
-
 !
 !  Subroutine with distributed matrixes
 !  (written by Carlo Cavazzoni)
 !
 !----------------------------------------------------------------------------
-SUBROUTINE pcegterg(h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &  
+SUBROUTINE pcegterg(h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
                     npw, npwx, nvec, nvecx, npol, evc, ethr, &
                     e, btype, notcnv, lrot, dav_iter, nhpsi )
   !----------------------------------------------------------------------------
@@ -778,7 +781,7 @@ SUBROUTINE pcegterg(h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
     ! the product of S and psi
   LOGICAL, ALLOCATABLE :: conv(:)
     ! true if the root is converged
-  REAL(DP) :: empty_ethr 
+  REAL(DP) :: empty_ethr
     ! threshold for empty bands
   INTEGER :: idesc(LAX_DESC_SIZE), idesc_old(LAX_DESC_SIZE)
   INTEGER, ALLOCATABLE :: irc_ip( : )
@@ -799,7 +802,7 @@ SUBROUTINE pcegterg(h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
   !
   EXTERNAL  h_psi_ptr, s_psi_ptr, g_psi_ptr
     ! h_psi_ptr(npwx,npw,nvec,psi,hpsi)
-    !     calculates H|psi> 
+    !     calculates H|psi>
     ! s_psi_ptr(npwx,npw,nvec,psi,spsi)
     !     calculates S|psi> (if needed)
     !     Vectors psi,hpsi,spsi are dimensioned (npwx,nvec)
@@ -862,7 +865,7 @@ SUBROUTINE pcegterg(h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
   !
   IF( la_proc ) THEN
      !
-     ! only procs involved in the diagonalization need to allocate local 
+     ! only procs involved in the diagonalization need to allocate local
      ! matrix block.
      !
      ALLOCATE( vl( nx , nx ), STAT=ierr )
@@ -920,15 +923,15 @@ SUBROUTINE pcegterg(h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
   !
   CALL start_clock( 'cegterg:init' )
 
-  CALL compute_distmat( hl, psi, hpsi ) 
+  CALL compute_distmat( hl, psi, hpsi )
   !
   IF ( uspp ) THEN
      !
-     CALL compute_distmat( sl, psi, spsi ) 
+     CALL compute_distmat( sl, psi, spsi )
      !
   ELSE
      !
-     CALL compute_distmat( sl, psi, psi )  
+     CALL compute_distmat( sl, psi, psi )
      !
   END IF
   CALL stop_clock( 'cegterg:init' )
@@ -984,8 +987,8 @@ SUBROUTINE pcegterg(h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
      !
      CALL g_psi_ptr( npwx, npw, notcnv, npol, psi(1,nb1), ew(nb1) )
      !
-     ! ... "normalize" correction vectors psi(:,nb1:nbase+notcnv) in 
-     ! ... order to improve numerical stability of subspace diagonalization 
+     ! ... "normalize" correction vectors psi(:,nb1:nbase+notcnv) in
+     ! ... order to improve numerical stability of subspace diagonalization
      ! ... (cdiaghg) ew is used as work array :
      !
      ! ...         ew = <psi_i|psi_i>,  i = nbase + 1, nbase + notcnv
@@ -1033,7 +1036,7 @@ SUBROUTINE pcegterg(h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
      !
      CALL start_clock( 'cegterg:overlap' )
      !
-     ! we need to save the old descriptor in order to redistribute matrices 
+     ! we need to save the old descriptor in order to redistribute matrices
      !
      idesc_old = idesc
      !
@@ -1129,7 +1132,7 @@ SUBROUTINE pcegterg(h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
         !
         CALL start_clock( 'cegterg:last' )
         !
-        CALL refresh_evc()       
+        CALL refresh_evc()
         !
         IF ( notcnv == 0 ) THEN
            !
@@ -1159,7 +1162,7 @@ SUBROUTINE pcegterg(h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
         IF ( uspp ) THEN
            !
            CALL refresh_spsi()
-           ! 
+           !
         END IF
         !
         CALL refresh_hpsi()
@@ -1213,7 +1216,7 @@ SUBROUTINE pcegterg(h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
   IF ( uspp ) DEALLOCATE( spsi )
   !
   DEALLOCATE( hpsi )
-  DEALLOCATE( psi )  
+  DEALLOCATE( psi )
   !
   CALL stop_clock( 'cegterg' )
   !call print_clock( 'cegterg' )
@@ -1237,7 +1240,7 @@ CONTAINS
         DO i = 1, idesc(LAX_DESC_NC)
            distmat( i, i ) = ( 1_DP , 0_DP )
         END DO
-     END IF 
+     END IF
      RETURN
   END SUBROUTINE set_to_identity
   !
@@ -1269,14 +1272,14 @@ CONTAINS
               !
               IF ( .NOT. conv(n) ) THEN
                  !
-                 ! ... this root not yet converged ... 
+                 ! ... this root not yet converged ...
                  !
                  np  = np  + 1
                  npl = npl + 1
                  IF( npl == 1 ) ic_notcnv( ipc ) = np
                  !
                  ! ... reorder eigenvectors so that coefficients for unconverged
-                 ! ... roots come first. This allows to use quick matrix-matrix 
+                 ! ... roots come first. This allows to use quick matrix-matrix
                  ! ... multiplications to set a new basis vector (see below)
                  !
                  notcnv_ip( ipc ) = notcnv_ip( ipc ) + 1
@@ -1290,7 +1293,7 @@ CONTAINS
                  ! ... for use in g_psi_ptr
                  !
                  ew(nbase+np) = e(n)
-                 !   
+                 !
               END IF
               !
            END DO
@@ -1416,19 +1419,19 @@ CONTAINS
               IF( ipr-1 == idesc(LAX_DESC_MYR) .AND. ipc-1 == idesc(LAX_DESC_MYC) .AND. la_proc ) THEN
                  !
                  !  this proc sends his block
-                 ! 
+                 !
                  CALL mp_bcast( vl(:,1:nc), root, ortho_parent_comm )
                  CALL ZGEMM( 'N', 'N', kdim, nc, nr, ONE, &
                           psi(1,ir), kdmx, vl, nx, beta, evc(1,ic), kdmx )
               ELSE
                  !
                  !  all other procs receive
-                 ! 
+                 !
                  CALL mp_bcast( vtmp(:,1:nc), root, ortho_parent_comm )
                  CALL ZGEMM( 'N', 'N', kdim, nc, nr, ONE, &
                           psi(1,ir), kdmx, vtmp, nx, beta, evc(1,ic), kdmx )
               END IF
-              ! 
+              !
 
               beta = ONE
 
@@ -1474,19 +1477,19 @@ CONTAINS
               IF( ipr-1 == idesc(LAX_DESC_MYR) .AND. ipc-1 == idesc(LAX_DESC_MYC) .AND. la_proc ) THEN
                  !
                  !  this proc sends his block
-                 ! 
+                 !
                  CALL mp_bcast( vl(:,1:nc), root, ortho_parent_comm )
                  CALL ZGEMM( 'N', 'N', kdim, nc, nr, ONE, &
                           spsi(1,ir), kdmx, vl, nx, beta, psi(1,nvec+ic), kdmx )
               ELSE
                  !
                  !  all other procs receive
-                 ! 
+                 !
                  CALL mp_bcast( vtmp(:,1:nc), root, ortho_parent_comm )
                  CALL ZGEMM( 'N', 'N', kdim, nc, nr, ONE, &
                           spsi(1,ir), kdmx, vtmp, nx, beta, psi(1,nvec+ic), kdmx )
               END IF
-              ! 
+              !
               beta = ONE
 
            END DO
@@ -1534,19 +1537,19 @@ CONTAINS
               IF( ipr-1 == idesc(LAX_DESC_MYR) .AND. ipc-1 == idesc(LAX_DESC_MYC) .AND. la_proc ) THEN
                  !
                  !  this proc sends his block
-                 ! 
+                 !
                  CALL mp_bcast( vl(:,1:nc), root, ortho_parent_comm )
                  CALL ZGEMM( 'N', 'N', kdim, nc, nr, ONE, &
                           hpsi(1,ir), kdmx, vl, nx, beta, psi(1,nvec+ic), kdmx )
               ELSE
                  !
                  !  all other procs receive
-                 ! 
+                 !
                  CALL mp_bcast( vtmp(:,1:nc), root, ortho_parent_comm )
                  CALL ZGEMM( 'N', 'N', kdim, nc, nr, ONE, &
                           hpsi(1,ir), kdmx, vtmp, nx, beta, psi(1,nvec+ic), kdmx )
               END IF
-              ! 
+              !
               beta = ONE
 
            END DO
@@ -1566,7 +1569,7 @@ CONTAINS
   SUBROUTINE compute_distmat( dm, v, w )
      !
      !  This subroutine compute <vi|wj> and store the
-     !  result in distributed matrix dm 
+     !  result in distributed matrix dm
      !
      INTEGER :: ipc, ipr
      INTEGER :: nr, nc, ir, ic, root
@@ -1580,7 +1583,7 @@ CONTAINS
      !
      !  Only upper triangle is computed, then the matrix is hermitianized
      !
-     DO ipc = 1, idesc(LAX_DESC_NPC) !  loop on column procs 
+     DO ipc = 1, idesc(LAX_DESC_NPC) !  loop on column procs
         !
         nc = nrc_ip( ipc )
         ic = irc_ip( ipc )
