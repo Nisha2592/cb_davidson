@@ -75,6 +75,12 @@ program cb_davidson_main
        current_k = ik + i_batch -1   
        call init_k(current_k, i_batch) 
        call init_random_wfcs(npw_batched(i_batch), npwx, nbnd, evc_batched(1,1,i_batch),i_batch)   
+       !$acc host_data use_device(eig) 
+       call cegterg( my_h_psi_batched, cb_s_psi_batched, overlap, cb_g_psi_batched, &
+                      npw_batched(i_batch), npwx, nbnd, nbndx, npol, evc_batched(1,1,i_batch), ethr, &
+                      eig_batched(1,i_batch), btype, notcnv_batched(i_batch), lrot, dav_iter_batched(i_batch), & 
+                      nhpsi_batched(i_batch), i_batch )
+       !$acc end host_data 
      end do 
      !$omp end parallel 
      
@@ -86,31 +92,11 @@ program cb_davidson_main
         
         call start_clock('davidson')
 !--- THIS IS THE RELEVANT CALL TO THE ROUTINE IN KS_Solvers/Davidson ------------------------------------------!
-#if defined(__MPI)
-        write (stdout,*) 'ndiag', ndiag
-        if (ndiag == 1) then
-#endif
-           !$acc host_data use_device(eig) 
-           call cegterg( my_h_psi_batched, cb_s_psi_batched, overlap, cb_g_psi_batched, &
-                      npw_batched(i_batch), npwx, nbnd, nbndx, npol, evc_batched(1,1,i_batch), ethr, &
-                      eig_batched(1,i_batch), btype, notcnv, lrot, dav_iter, nhpsi, i_batch )
-           !$acc end host_data 
-#if defined(__MPI)
-        else
-           call pcegterg(cb_h_psi, cb_s_psi, overlap, cb_g_psi, &
-                      npw, npwx, nbnd, nbndx, npol, evc, ethr, &
-                      eig, btype, notcnv, lrot, dav_iter, nhpsi )
-        end if
-#endif
 !--------------------------------------------------------------------------------------------------------------!
 
         call stop_clock('davidson')
         !$acc update self(eig)
         
-        ! Store results in batched arrays
-        notcnv_batched(i_batch) = notcnv
-        dav_iter_batched(i_batch) = dav_iter
-        nhpsi_batched(i_batch) = nhpsi
         
         if (energy_shift .and. current_k==1) ref=eig_batched(4*ncell**3,i_batch)
      
