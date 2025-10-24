@@ -1,4 +1,4 @@
-   program cb_davidson_main
+program cb_davidson_main
 
 ! global variables
    USE cb_module
@@ -18,6 +18,7 @@
    real(dp), allocatable :: eig(:), eig_batched(:,:) 
    integer, parameter :: npol=1
    integer :: notcnv, dav_iter, nhpsi
+   integer, allocatable :: notcnv_batched(:), dav_iter_batched(:), nhpsi_batched(:)
    logical :: overlap = .false. , lrot =.false.
 ! additional local variables
    real(dp) :: ref=0.d0
@@ -29,7 +30,8 @@
                                                     ! band group or at the parallelization level above.
 #endif
 !------------------------------------------------------------------------
-   external my_h_psi, cb_h_psi, cb_s_psi, cb_g_psi
+   external my_h_psi_batched, cb_h_psi, cb_s_psi_batched, cb_g_psi_batched
+   external cb_s_psi, cb_g_psi
 !  subroutine cb_h_psi(npwx,npw,nvec,psi,hpsi)  computes H*psi
 !  subroutine cb_s_psi(npwx,npw,nvec,psi,spsi)  computes S*psi (if needed)
 !  subroutine cb_g_psi(npwx,npw,nvec,psi,eig)   computes G*psi -> psi
@@ -52,6 +54,7 @@
 
    nk_batches = 4 
    allocate(npw_batched(nk_batches)) 
+   allocate(notcnv_batched(nk_batches), dav_iter_batched(nk_batches), nhpsi_batched(nk_batches))
    call input(gamma_only)
    call ggen(gamma_only)
    call set_cb_potential
@@ -60,8 +63,10 @@
    overlap = use_overlap
 
    allocate( evc_batched(npwx,nbnd,nk_batches), eig_batched(nbnd,nk_batches) )
+   allocate( fft_array_batched(dfft%nnr, nk_batches), aux_batched(dfft%nnr, nk_batches) )
    allocate (evc(npwx, nbnd), eig(nbnd)) 
-   !$acc enter data create(evc, eig)
+   !$acc enter data create(evc, eig, fft_array_batched, aux_batched)
+   
    do ik =1,nks, nk_batches
      !$omp parallel default(shared) private(i_batch, current_k)
      !$omp do
@@ -72,6 +77,8 @@
        call init_random_wfcs(npw_batched(i_batch), npwx, nbnd, evc_batched(1,1,i_batch),i_batch)   
      end do 
      !$omp end parallel 
+     
+     ! Second loop: Process batches sequentially
      do i_batch =1, min(nk_batches, nks - ik +1 )  
         print '("Second loop, batch ",I5)', i_batch 
         current_k = ik + i_batch -1   
@@ -81,16 +88,16 @@
         evc = evc_batched(:, :,i_batch) 
         !$acc update device(evc, igk) 
         
-                call start_clock('davidson')
+        call start_clock('davidson')
 !--- THIS IS THE RELEVANT CALL TO THE ROUTINE IN KS_Solvers/Davidson ------------------------------------------!
 #if defined(__MPI)
         write (stdout,*) 'ndiag', ndiag
         if (ndiag == 1) then
 #endif
            !$acc host_data use_device(eig) 
-           call cegterg( my_h_psi, cb_s_psi, overlap, cb_g_psi, &
+           call cegterg( my_h_psi_batched, cb_s_psi_batched, overlap, cb_g_psi_batched, &
                       npw, npwx, nbnd, nbndx, npol, evc, ethr, &
-                      eig, btype, notcnv, lrot, dav_iter, nhpsi )
+                      eig, btype, notcnv, lrot, dav_iter, nhpsi, i_batch )
            !$acc end host_data 
 #if defined(__MPI)
         else
@@ -103,16 +110,27 @@
 
         call stop_clock('davidson')
         !$acc update self(eig)
+        
+        ! Store results in batched arrays
+        notcnv_batched(i_batch) = notcnv
+        dav_iter_batched(i_batch) = dav_iter
+        nhpsi_batched(i_batch) = nhpsi
+        
         if (energy_shift .and. current_k==1) ref=eig(4*ncell**3)
      
         call write_bands(eig,ref)
-        write (stdout,*) 'dav_iter, nhpsi, notcnv, ethr ', dav_iter, nhpsi, notcnv, ethr
+        write (stdout,*) 'batch', i_batch, 'dav_iter, nhpsi, notcnv, ethr ', &
+                         dav_iter, nhpsi, notcnv, ethr
      end do 
    end do
-   !$acc exit data delete(evc, eig)
-   !$acc exit data delete(dfft, dfft%nl, dfft%nnr, igk, vloc,fft_array) 
+   
+   !$acc exit data delete(evc, eig, fft_array_batched, aux_batched)
+   !$acc exit data delete(dfft, dfft%nl, dfft%nnr, igk, vloc) 
    deallocate( eig )
    deallocate( evc )
+   deallocate( evc_batched, eig_batched )
+   deallocate( fft_array_batched, aux_batched )
+   deallocate( notcnv_batched, dav_iter_batched, nhpsi_batched )
    call print_clock('davidson')
 
    call print_clock( 'cegterg' )
