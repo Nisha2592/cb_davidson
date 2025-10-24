@@ -82,10 +82,6 @@ program cb_davidson_main
      do i_batch =1, min(nk_batches, nks - ik +1 )  
         print '("Second loop, batch ",I5)', i_batch 
         current_k = ik + i_batch -1   
-        igk = igk_batched(:,i_batch) 
-        ekin = ekin_batched(:, i_batch) 
-        npw = npw_batched(i_batch) 
-        evc = evc_batched(:, :,i_batch) 
         !$acc update device(evc, igk) 
         
         call start_clock('davidson')
@@ -96,8 +92,8 @@ program cb_davidson_main
 #endif
            !$acc host_data use_device(eig) 
            call cegterg( my_h_psi_batched, cb_s_psi_batched, overlap, cb_g_psi_batched, &
-                      npw, npwx, nbnd, nbndx, npol, evc, ethr, &
-                      eig, btype, notcnv, lrot, dav_iter, nhpsi, i_batch )
+                      npw_batched(i_batch), npwx, nbnd, nbndx, npol, evc_batched(1,1,i_batch), ethr, &
+                      eig_batched(1,i_batch), btype, notcnv, lrot, dav_iter, nhpsi, i_batch )
            !$acc end host_data 
 #if defined(__MPI)
         else
@@ -116,9 +112,9 @@ program cb_davidson_main
         dav_iter_batched(i_batch) = dav_iter
         nhpsi_batched(i_batch) = nhpsi
         
-        if (energy_shift .and. current_k==1) ref=eig(4*ncell**3)
+        if (energy_shift .and. current_k==1) ref=eig_batched(4*ncell**3,i_batch)
      
-        call write_bands(eig,ref)
+        call write_bands(eig_batched(1,i_batch),ref)
         write (stdout,*) 'batch', i_batch, 'dav_iter, nhpsi, notcnv, ethr ', &
                          dav_iter, nhpsi, notcnv, ethr
      end do 
