@@ -14,16 +14,17 @@ subroutine my_h_psi_batched(npwx, npw, nbnd, psi, hpsi, i_batch)
     !$acc end kernels 
     !$acc parallel loop 
     do ig = 1, npw
+      ! if (igk_batched(ig,i_batch) <= 0 .or. igk_batched(ig,i_batch) > size(dfft%nl)) stop "igk_batched index out of range"
       fft_array_batched(dfft%nl(igk_batched(ig,i_batch)),i_batch) = psi(ig,ibnd) 
     end do 
-    !$acc host_data use_device(fft_array) 
+    !$acc host_data use_device(fft_array_batched) 
     call invfft( 'Wave', fft_array_batched(:,i_batch), dfft) 
     !$acc end host_data 
     !$acc parallel loop 
     do ir = 1, dfft%nnr 
        fft_array_batched(ir, i_batch) = fft_array_batched(ir,i_batch) * vloc(ir) 
     end do 
-    !$acc host_data use_device(fft_array) 
+    !$acc host_data use_device(fft_array_batched) 
     call fwfft('Wave', fft_array_batched(:,i_batch), dfft) 
     !$acc end host_data
     !$acc parallel loop 
