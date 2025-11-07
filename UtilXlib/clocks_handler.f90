@@ -46,7 +46,7 @@ MODULE mytime
   REAL(DP), PARAMETER :: notrunning = - 1.0_DP
   !
   REAL(DP),allocatable   :: cputime(:,:), t0cpu(:,:)
-  REAL(DP)               :: walltime(:,:), t0wall(:,:)
+  REAL(DP),allocatable   :: walltime(:,:), t0wall(:,:)
   REAL(DP)               :: gputime(maxclock)
   CHARACTER(len=12)      :: clock_label(maxclock)
   INTEGER,allocatable    :: called(:,:)
@@ -186,8 +186,9 @@ SUBROUTINE start_clock( label )
   CHARACTER(len=12):: label_
   INTEGER          :: n
   REAL(DP)         :: local_t0cpu
-  INTEGER          :: mythread = 1
+  INTEGER          :: mythread = 0 !Fixed: Initialize to 0
   INTEGER          :: current_nclock 
+  INTEGER          :: new_current_nclock !Fixed: added missing decleration
   !
 #if defined (__TRACE)
   if (trace_depth <= max_print_depth ) &  ! used to gauge the ammount of output
@@ -247,13 +248,13 @@ SUBROUTINE start_clock( label )
      nclock              = nclock + 1
      !$omp end atomic 
      !$omp atomic read 
-       new_current_clock = nclock 
-     !$omp end atomic read 
-     if (new_current_nclock > current_clock+1) goto 999 
+     new_current_nclock = nclock  !Fixed: Typo in variable name
+     !$omp end atomic  
+     if (new_current_nclock > current_nclock+1) goto 999 !Fixed:Typo in variable name
      clock_label(nclock) = label_
-     t0cpu(nclock)       = f_tcpu()
-     t0wall(nclock)      = f_wall()
-     call nvtxStartRange(label_, n)
+     t0cpu(mythread+1, nclock)       = f_tcpu() !Fixed: added mythread+1
+     t0wall(mythread+1, nclock)      = f_wall() !Fixed: added mythread+1
+     call nvtxStartRange(label_, nclock) !Fixed: nclock not n
      !
   ENDIF
   !
@@ -283,6 +284,7 @@ SUBROUTINE start_clock_gpu( label )
   !
   CHARACTER(len=12):: label_
   INTEGER          :: n, ierr
+  INTEGER          :: mythread=0
   !
 #if defined (__TRACE)
   if (trace_depth <= max_print_depth ) &  ! used to gauge the ammount of output
@@ -304,15 +306,15 @@ SUBROUTINE start_clock_gpu( label )
         ! ... found previously defined clock: check if not already started,
         ! ... store in t0cpu the starting time
         !
-        IF ( t0cpu(n) /= notrunning ) THEN
+        IF ( t0cpu(mythread+1, n) /= notrunning ) THEN !Fixed: add mythread+1
 !            WRITE( stdout, '("start_clock: clock # ",I2," for ",A12, &
 !                           & " already started")' ) n, label_
         ELSE
 #if defined(__CUDA)
            ierr = cudaEventRecord(gpu_starts(n),0)
 #endif
-           t0cpu(n) = f_tcpu()
-           t0wall(n)= f_wall()
+           t0cpu(mythread+1, n) = f_tcpu() !Fixed: added mythread+1
+           t0wall(mythread+1, n)= f_wall() !Fixed: added mythread+1
            call nvtxStartRange(label_, n)
         ENDIF
         !
@@ -335,9 +337,9 @@ SUBROUTINE start_clock_gpu( label )
 #if defined(__CUDA)
      ierr = cudaEventRecord(gpu_starts(nclock),0)
 #endif
-     t0cpu(nclock)       = f_tcpu()
-     t0wall(nclock)      = f_wall()
-     call nvtxStartRange(label_, n)
+     t0cpu(mythread+1, nclock)       = f_tcpu() !Fixed: added mythread+1
+     t0wall(mythread+1, nclock)      = f_wall() !Fixed: added mythread+1
+     call nvtxStartRange(label_, nclock) !Fixed: nclock not n
      !
   ENDIF
   !
@@ -391,7 +393,7 @@ SUBROUTINE stop_clock( label )
         ! ... found previously defined clock : check if properly initialised,
         ! ... add elapsed time, increase the counter of calls
         !
-        IF ( t0cpu(mythread+1) == notrunning ) THEN
+        IF ( t0cpu(mythread+1,n) == notrunning ) THEN
            !
            WRITE( stdout, '("stop_clock: clock # ",I2," for ",A12, " not running")' ) n, label
            !
@@ -401,7 +403,7 @@ SUBROUTINE stop_clock( label )
            walltime(mythread+1,n)  = walltime(mythread+1, n)+ f_wall() - t0wall(mythread+1,n)
            t0cpu(mythread+1, n)     = notrunning
            t0wall(mythread+1, n)    = notrunning
-           called(mythread+1,n)    = called(,mythread+1,n) + 1
+           called(mythread+1,n)    = called(mythread+1,n) + 1
 
            call nvtxEndRange
            !
@@ -443,6 +445,7 @@ SUBROUTINE stop_clock_gpu( label )
   CHARACTER(len=12):: label_
   INTEGER          :: n, ierr
   REAL             :: time
+  INTEGER          :: mythread = 0
   !
 #if defined (__TRACE)
   trace_depth = trace_depth - 1
@@ -468,13 +471,13 @@ SUBROUTINE stop_clock_gpu( label )
         ! ... found previously defined clock : check if properly initialised,
         ! ... add elapsed time, increase the counter of calls
         !
-        IF ( t0cpu(n) == notrunning ) THEN
+        IF ( t0cpu(mythread+1, n) == notrunning ) THEN !FIxed: added mythread+1
            !
            WRITE( stdout, '("stop_clock: clock # ",I2," for ",A12, " not running")' ) n, label
            !
         ELSE
            !
-           cputime(n)   = cputime(n) + f_tcpu() - t0cpu(n)
+           cputime(mythread+1, n)   = cputime(mythread+1, n) + f_tcpu() - t0cpu(mythread+1, n) !Fixed
 #if defined(__CUDA)
            ierr         = cudaEventRecord(gpu_stops(n),0)
            ierr         = cudaEventSynchronize(gpu_stops(n))
@@ -483,10 +486,10 @@ SUBROUTINE stop_clock_gpu( label )
            gputime(n)   = gputime(n) + time
            gpu_called(n)= gpu_called(n) + 1
            !
-           walltime(n)  = walltime(n)+ f_wall() - t0wall(n)
-           t0cpu(n)     = notrunning
-           t0wall(n)    = notrunning
-           called(n)    = called(n) + 1
+           walltime(mythread+1, n)  = walltime(mythread+1, n)+ f_wall() - t0wall(mythread+1, n) !Fixed
+           t0cpu(mythread+1, n)     = notrunning !Fixed
+           t0wall(mythread+1, n)    = notrunning !Fixed
+           called(mythread+1, n)    = called(mythread+1, n) + 1 !Fixed
            call nvtxEndRange()
            !
         ENDIF
@@ -574,8 +577,9 @@ FUNCTION get_cpu_and_wall( n) result (t)
      t(1) = sum(cputime(:,n))
      t(2)  = sum(walltime(:,n)) 
    ELSE 
-     t(1)   = cputime(n) + f_tcpu() - t0cpu(n)
-     t(2)   = walltime(n)+ f_wall() - t0wall(n)
+     !Fixed: sum across threads       
+     t(1)   = sum(cputime(:, n) + f_tcpu() - t0cpu(:, n))
+     t(2)   = sum(walltime(:, n)+ f_wall() - t0wall(:, n))
    END IF 
 #if defined(PRINT_AVG_CPU_TIME_PER_THREAD)
   ! rescale the elapsed cpu time on a per-thread basis
@@ -596,21 +600,21 @@ SUBROUTINE print_this_clock( n )
   REAL(DP) :: elapsed_cpu_time, elapsed_wall_time, nsec, msec
   INTEGER  :: nday, nhour, nmin, nmax, mday, mhour, mmin
   !
-  !
-  IF ( t0cpu(n) == notrunning ) THEN
+  !Fixed: Sum across all threads
+  IF ( all(t0cpu(:,n) == notrunning )) THEN
      !
      ! ... clock stopped, print the stored value for the cpu time
-     !
-     elapsed_cpu_time = cputime(n)
-     elapsed_wall_time= walltime(n)
+     !Fixed: sum across threads
+     elapsed_cpu_time = sum(cputime(:, n))
+     elapsed_wall_time= sum(walltime(:, n))
      !
   ELSE
      !
      ! ... clock not stopped, print the current value of the cpu time
-     !
-     elapsed_cpu_time   = cputime(n) + f_tcpu() - t0cpu(n)
-     elapsed_wall_time  = walltime(n)+ f_wall() - t0wall(n)
-     called(n)  = called(n) + 1
+     !Fixed: Sum across threads
+     elapsed_cpu_time   = sum(cputime(:, n)) + f_tcpu() - sum(t0cpu(:,n))
+     elapsed_wall_time  = sum(walltime(:,n))+ f_wall() - sum(t0wall(:,n))
+     called(:,n)  = called(:,n) + 1 !Fixed: update all thread counts
      !
   ENDIF
   !
@@ -619,8 +623,8 @@ SUBROUTINE print_this_clock( n )
   ! rescale the elapsed cpu time on a per-thread basis
   elapsed_cpu_time   = elapsed_cpu_time * mpi_per_thread
 #endif
-  !
-  nmax = called(n)
+  !Fixed: Sum called counts across threads
+  nmax = sum(called(:,n))
   !
   ! ... In the parallel case there are several possible approaches
   ! ... The safest one is to leave each clock independent from the others
@@ -712,7 +716,7 @@ SUBROUTINE print_this_clock( n )
      ENDIF
 #endif
      !
-  ELSEIF ( nmax == 1 .or. t0cpu(n) /= notrunning ) THEN
+  ELSEIF ( nmax == 1 .or. any(t0cpu(:,n) /= notrunning ) ) THEN !Fixed: any instead of single value check
      !
      ! ... for clocks that have been called only once
      !
@@ -831,14 +835,14 @@ FUNCTION get_clock( label )
   DO n = 1, nclock
      !
      IF ( label == clock_label(n) ) THEN
-        !
-        IF ( t0cpu(n) == notrunning ) THEN
+        !FIxed: sum across threads
+        IF ( all(t0cpu(:,n) == notrunning )) THEN
            !
-           get_clock = walltime(n)
+           get_clock = sum(walltime(:,n))
            !
         ELSE
            !
-           get_clock = walltime(n) + f_wall() - t0wall(n)
+           get_clock = sum(walltime(:,n)) + f_wall() - sum(t0wall(:,n))
            !
         ENDIF
         !
