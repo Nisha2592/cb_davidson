@@ -208,10 +208,7 @@ SUBROUTINE start_clock( label )
   !
   label_ = trim ( label )
   !
-999 continue 
-  !$omp atomic read 
   current_nclock = nclock
-  !$omp end atomic 
   DO n = 1, current_nclock
      !
      IF ( clock_label(n) == label_ ) THEN
@@ -244,13 +241,7 @@ SUBROUTINE start_clock( label )
      !
   ELSE
      !
-     !$omp atomic update  
      nclock              = nclock + 1
-     !$omp end atomic 
-     !$omp atomic read 
-     new_current_nclock = nclock  !Fixed: Typo in variable name
-     !$omp end atomic  
-     if (new_current_nclock > current_nclock+1) goto 999 !Fixed:Typo in variable name
      clock_label(nclock) = label_
      t0cpu(mythread+1, nclock)       = f_tcpu() !Fixed: added mythread+1
      t0wall(mythread+1, nclock)      = f_wall() !Fixed: added mythread+1
@@ -395,7 +386,7 @@ SUBROUTINE stop_clock( label )
         !
         IF ( t0cpu(mythread+1,n) == notrunning ) THEN
            !
-           WRITE( stdout, '("stop_clock: clock # ",I2," for ",A12, " not running")' ) n, label
+           WRITE( stdout, '("stop_clock: clock # ",I2," for ",A12, " not running on thread ",I2)') n, label,mythread
            !
         ELSE
            !

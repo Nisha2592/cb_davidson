@@ -2,12 +2,17 @@ program cb_davidson_main
 
 ! global variables
    USE cb_module
+   USE mytime,    ONLY : nclock, clock_label, notrunning, no, maxclock, &
+                        t0cpu, t0wall, f_wall, f_tcpu
+
 #if defined(__MPI)
    use mp_global,            ONLY : mp_startup, mp_global_end
    use mp_world,             ONLY : world_comm
    use mp_bands,             ONLY : intra_bgrp_comm, inter_bgrp_comm
 #endif
-
+#if defined(_OPENMP) 
+   use omp_lib, only: omp_set_num_threads
+#endif
    implicit none
    !
    !include 'laxlib.fh'
@@ -50,9 +55,14 @@ program cb_davidson_main
 !--------------------------------------------------------------------------------------------------------------!
 #endif
 
-   call init_clocks(.true.)
-
    nk_batches = 4 
+#if defined(_OPENMP) 
+   call omp_set_num_threads(4) 
+#endif 
+   !$omp parallel default(shared) 
+   call init_clocks(.true.)
+   !$omp end parallel 
+
    allocate(npw_batched(nk_batches)) 
    allocate(notcnv_batched(nk_batches), dav_iter_batched(nk_batches), nhpsi_batched(nk_batches))
    call input(gamma_only)
@@ -68,7 +78,8 @@ program cb_davidson_main
    !$acc enter data create(evc, eig, fft_array_batched, aux_batched)
    
    do ik =1,nks, nk_batches
-     !$omp parallel default(shared) private(i_batch, current_k)
+     !$omp parallel default(shared) private(i_batch, current_k) &
+     !$omp firstprivate(nclock, clock_label)
      !$omp do
      do i_batch = 1, min(nk_batches, nks - ik +1)   
        print '("First loop, batch ",I5)', i_batch 
