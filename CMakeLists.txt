@@ -398,6 +398,9 @@ if(NOT QE_LAPACK_INTERNAL)
             find_package(LAPACK)
             unset(CMAKE_REQUIRED_LINK_OPTIONS)
         endif()
+    elseif(BLA_VENDOR STREQUAL NVPL)
+        find_package(nvpl REQUIRED COMPONENTS blas lapack) 
+        target_link_libraries(qe_lapack INTERFACE nvpl::lapack_lp64_omp)  
     else()
         if(QE_ENABLE_OPENMP)
             set(CMAKE_REQUIRED_LINK_OPTIONS ${OpenMP_Fortran_FLAGS})
@@ -424,7 +427,7 @@ if(NOT QE_LAPACK_INTERNAL)
           unset(ZHPEV_FOUND CACHE)
           message(FATAL_ERROR "Incomplete LAPACK! function zhpev not found!")
         endif()
-    else()
+    elseif(NOT BLA_VENDOR STREQUAL NVPL)
         message(FATAL_ERROR "Failed to find a complete set of external BLAS/LAPACK library by FindLAPACK. "
                             "Variables controlling FindLAPACK can be found at CMake online documentation. "
                             "Alternatively, '-DQE_LAPACK_INTERNAL=ON' may be used to enable reference LAPACK "
