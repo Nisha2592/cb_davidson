@@ -37,6 +37,9 @@ MODULE mytime
 #if defined(__CUDA)
   USE cudafor
 #endif
+#if defined(_OPENMP)
+  USE omp_lib,only: omp_lock_kind
+#endif
   !
   IMPLICIT NONE
   !
@@ -45,8 +48,10 @@ MODULE mytime
   INTEGER,  PARAMETER :: maxclock = 128
   REAL(DP), PARAMETER :: notrunning = - 1.0_DP
   !
-  REAL(DP)          :: cputime(maxclock), t0cpu(maxclock)
-  REAL(DP)          :: walltime(maxclock), t0wall(maxclock)
+  REAL(DP)          :: cputime(maxclock) 
+  REAL(DP),ALLOCATABLE :: t0cpu(:,:) 
+  REAL(DP)          :: walltime(maxclock)  
+  REAL(DP),ALLOCATABLE :: t0wall(:,:)
   REAL(DP)          :: gputime(maxclock)
   CHARACTER(len=12) :: clock_label(maxclock)
   INTEGER           :: called(maxclock)
@@ -56,7 +61,12 @@ MODULE mytime
   REAL(DP)          :: mpi_per_thread = 1.0_DP
 
   INTEGER :: nclock = 0
+  INTEGER :: clock_thread = 0 
+  !$omp threadprivate (clock_thread)
   LOGICAL :: no
+#if defined (_OPENMP) 
+  INTEGER(kind=omp_lock_kind)  :: clock_locker
+#endif
 #if defined (__TRACE)
   INTEGER :: trace_depth = 0
   INTEGER :: mpime
@@ -98,27 +108,34 @@ SUBROUTINE init_clocks( go )
 #if defined(__CUDA)
   USE cudafor
 #endif
+#if defined(_OPENMP) 
+  USE omp_lib, only: omp_init_lock, omp_get_max_threads, omp_get_thread_num, omp_get_num_threads
+  USE mytime, only: clock_locker 
+#endif
   !
   IMPLICIT NONE
   !
   LOGICAL, INTENT(IN) :: go
-  INTEGER :: n, ierr
+  INTEGER :: n, ierr, nthreads = 1 
   !
 #if defined(_OPENMP)
-  INTEGER, EXTERNAL :: omp_get_max_threads
   mpi_per_thread = 1.0_DP/omp_get_max_threads()
+  call omp_init_lock(clock_locker) 
+  nthreads = omp_get_num_threads() 
+  if (omp_get_thread_num() > 0) return  
 #endif
   no = .not. go
   nclock = 0
   !
+  ALLOCATE(t0cpu(nthreads, maxclock), t0wall(nthreads, maxclock)) 
   DO n = 1, maxclock
      !
      called(n)      = 0
      gpu_called(n)  = 0
      cputime(n)     = 0.0_DP
-     t0cpu(n)       = notrunning
+     t0cpu(:,n)       = notrunning
      walltime(n)    = 0.0_DP
-     t0wall(n)      = notrunning
+     t0wall(:,n)      = notrunning
      gputime(n)     = 0.0_DP
      clock_label(n) = ' '
 #if defined(__CUDA)
@@ -165,7 +182,11 @@ SUBROUTINE start_clock( label )
   USE mytime,    ONLY : trace_depth, mpime, max_print_depth
 #endif
   USE mytime,    ONLY : nclock, clock_label, notrunning, no, maxclock, &
-                        t0cpu, t0wall, f_wall, f_tcpu
+                        t0cpu, t0wall, f_wall, f_tcpu, clock_thread
+#if defined(_OPENMP) 
+  USE omp_lib,only: omp_set_lock, omp_unset_lock, omp_get_thread_num
+  USE mytime, only: clock_locker
+#endif
   USE nvtx
   !
   IMPLICIT NONE
@@ -173,7 +194,7 @@ SUBROUTINE start_clock( label )
   CHARACTER(len=*) :: label
   !
   CHARACTER(len=12):: label_
-  INTEGER          :: n
+  INTEGER          :: n, mythread = 0 
   !
 #if defined (__TRACE)
   if (trace_depth <= max_print_depth ) &  ! used to gauge the ammount of output
@@ -182,7 +203,12 @@ SUBROUTINE start_clock( label )
   trace_depth = trace_depth + 1
 #endif
   !
+
   IF ( no .and. ( nclock == 1 ) ) RETURN
+#if defined(_OPENMP) 
+  mythread = omp_get_thread_num() 
+  call omp_set_lock(clock_locker)  
+#endif
   !
   ! ... prevent trouble if label is longer than 12 characters
   !
@@ -195,16 +221,20 @@ SUBROUTINE start_clock( label )
         ! ... found previously defined clock: check if not already started,
         ! ... store in t0cpu the starting time
         !
-        IF ( t0cpu(n) /= notrunning ) THEN
-!            WRITE( stdout, '("start_clock: clock # ",I2," for ",A12, &
-!                           & " already started")' ) n, label_
+        IF ( t0cpu(clock_thread,n) /= notrunning ) THEN
+            WRITE( stdout, '("start_clock: clock # ",I2," for ",A12, &
+                           & " already started",2I3)' ) n, label_, clock_thread, mythread+1
         ELSE
-           t0cpu(n) = f_tcpu()
-           t0wall(n)= f_wall()
+           t0cpu(clock_thread, n) = f_tcpu()
+           t0wall(clock_thread, n)= f_wall()
 
            call nvtxStartRange(label_, n)
         ENDIF
         !
+#if defined(_OPENMP) 
+        call omp_unset_lock(clock_locker) 
+#endif
+
         RETURN
         !
      ENDIF
@@ -221,12 +251,15 @@ SUBROUTINE start_clock( label )
      !
      nclock              = nclock + 1
      clock_label(nclock) = label_
-     t0cpu(nclock)       = f_tcpu()
-     t0wall(nclock)      = f_wall()
+     t0cpu(clock_thread, nclock)       = f_tcpu()
+     t0wall(clock_thread, nclock)      = f_wall()
      call nvtxStartRange(label_, n)
      !
   ENDIF
   !
+#if defined(_OPENMP) 
+  call omp_unset_lock(clock_locker) 
+#endif
   RETURN
   !
 END SUBROUTINE start_clock
@@ -252,7 +285,7 @@ SUBROUTINE start_clock_gpu( label )
   CHARACTER(len=*) :: label
   !
   CHARACTER(len=12):: label_
-  INTEGER          :: n, ierr
+  INTEGER          :: n, ierr, mythread = 0 
   !
 #if defined (__TRACE)
   if (trace_depth <= max_print_depth ) &  ! used to gauge the ammount of output
@@ -274,15 +307,15 @@ SUBROUTINE start_clock_gpu( label )
         ! ... found previously defined clock: check if not already started,
         ! ... store in t0cpu the starting time
         !
-        IF ( t0cpu(n) /= notrunning ) THEN
+        IF ( t0cpu(1,n) /= notrunning ) THEN
 !            WRITE( stdout, '("start_clock: clock # ",I2," for ",A12, &
 !                           & " already started")' ) n, label_
         ELSE
 #if defined(__CUDA)
            ierr = cudaEventRecord(gpu_starts(n),0)
 #endif
-           t0cpu(n) = f_tcpu()
-           t0wall(n)= f_wall()
+           t0cpu(1,n) = f_tcpu()
+           t0wall(1,n)= f_wall()
            call nvtxStartRange(label_, n)
         ENDIF
         !
@@ -305,8 +338,8 @@ SUBROUTINE start_clock_gpu( label )
 #if defined(__CUDA)
      ierr = cudaEventRecord(gpu_starts(nclock),0)
 #endif
-     t0cpu(nclock)       = f_tcpu()
-     t0wall(nclock)      = f_wall()
+     t0cpu(1,nclock)       = f_tcpu()
+     t0wall(1,nclock)      = f_wall()
      call nvtxStartRange(label_, n)
      !
   ENDIF
@@ -324,15 +357,20 @@ SUBROUTINE stop_clock( label )
   USE mytime,    ONLY : trace_depth, mpime, max_print_depth
 #endif
   USE mytime,    ONLY : no, nclock, clock_label, cputime, walltime, &
-                        notrunning, called, t0cpu, t0wall, f_wall, f_tcpu
+                        notrunning, called, t0cpu, t0wall, f_wall, f_tcpu,clock_thread
   USE nvtx
+#if defined(_OPENMP) 
+  USE omp_lib, only: omp_get_thread_num, omp_set_lock, omp_unset_lock
+  USE mytime, only: clock_locker
+#endif
+ 
   !
   IMPLICIT NONE
   !
   CHARACTER(len=*) :: label
   !
   CHARACTER(len=12):: label_
-  INTEGER          :: n
+  INTEGER          :: n, mythread=0 
   !
 #if defined (__TRACE)
   trace_depth = trace_depth - 1
@@ -340,6 +378,9 @@ SUBROUTINE stop_clock( label )
   WRITE( stdout,'(I3," depth=",I2," stop_clock ",A )') mpime, trace_depth, label ; FLUSH(stdout)
   !WRITE( *, '("mpime = ",I2,", TRACE (depth=",I2,") End: ",A12)') mpime, trace_depth, label
 #endif
+#if defined(_OPENMP) 
+  mythread = omp_get_thread_num() 
+#endif 
   !
   IF ( no ) RETURN
   !
@@ -347,6 +388,9 @@ SUBROUTINE stop_clock( label )
   !
   label_ = trim ( label )
   !
+#if defined(_OPENMP) 
+  call omp_set_lock(clock_locker) 
+#endif
   DO n = 1, nclock
      !
      IF ( clock_label(n) == label_ ) THEN
@@ -354,22 +398,24 @@ SUBROUTINE stop_clock( label )
         ! ... found previously defined clock : check if properly initialised,
         ! ... add elapsed time, increase the counter of calls
         !
-        IF ( t0cpu(n) == notrunning ) THEN
+        IF ( t0cpu(clock_thread, n) == notrunning ) THEN
            !
            WRITE( stdout, '("stop_clock: clock # ",I2," for ",A12, " not running")' ) n, label
            !
         ELSE
            !
-           cputime(n)   = cputime(n) + f_tcpu() - t0cpu(n)
-           walltime(n)  = walltime(n)+ f_wall() - t0wall(n)
-           t0cpu(n)     = notrunning
-           t0wall(n)    = notrunning
+           cputime(n)   = cputime(n) + f_tcpu() - t0cpu(clock_thread,n)
+           walltime(n)  = walltime(n)+ f_wall() - t0wall(clock_thread,n) 
            called(n)    = called(n) + 1
-
+           t0cpu(clock_thread, n)     = notrunning
+           t0wall(clock_thread, n)    = notrunning
            call nvtxEndRange
            !
         ENDIF
         !
+#if defined(_OPENMP) 
+        call omp_unset_lock(clock_locker) 
+#endif
         RETURN
         !
      ENDIF
@@ -379,6 +425,9 @@ SUBROUTINE stop_clock( label )
   ! ... clock not found
   !
   WRITE( stdout, '("stop_clock: no clock for ",A12," found !")' ) label
+#if defined(_OPENMP) 
+  call omp_unset_lock(clock_locker) 
+#endif
   !
   RETURN
   !
@@ -431,13 +480,13 @@ SUBROUTINE stop_clock_gpu( label )
         ! ... found previously defined clock : check if properly initialised,
         ! ... add elapsed time, increase the counter of calls
         !
-        IF ( t0cpu(n) == notrunning ) THEN
+        IF ( t0cpu(1,n) == notrunning ) THEN
            !
            WRITE( stdout, '("stop_clock: clock # ",I2," for ",A12, " not running")' ) n, label
            !
         ELSE
            !
-           cputime(n)   = cputime(n) + f_tcpu() - t0cpu(n)
+           cputime(n)   = cputime(n) + f_tcpu() - t0cpu(1,n)
 #if defined(__CUDA)
            ierr         = cudaEventRecord(gpu_stops(n),0)
            ierr         = cudaEventSynchronize(gpu_stops(n))
@@ -446,9 +495,9 @@ SUBROUTINE stop_clock_gpu( label )
            gputime(n)   = gputime(n) + time
            gpu_called(n)= gpu_called(n) + 1
            !
-           walltime(n)  = walltime(n)+ f_wall() - t0wall(n)
-           t0cpu(n)     = notrunning
-           t0wall(n)    = notrunning
+           walltime(n)  = walltime(n)+ f_wall() - t0wall(1,n)
+           t0cpu(1,n)     = notrunning
+           t0wall(1,n)    = notrunning
            called(n)    = called(n) + 1
            call nvtxEndRange()
            !
