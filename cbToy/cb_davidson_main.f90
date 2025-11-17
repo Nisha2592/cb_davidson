@@ -7,7 +7,8 @@ program cb_davidson_main
    use mp_world,             ONLY : world_comm
    use mp_bands,             ONLY : intra_bgrp_comm, inter_bgrp_comm
 #endif
-
+   use mytime,               only: t0cpu, clock_label, nclock, clock_thread              
+   use omp_lib,               only: omp_get_thread_num
    implicit none
    !
    !include 'laxlib.fh'
@@ -50,9 +51,14 @@ program cb_davidson_main
 !--------------------------------------------------------------------------------------------------------------!
 #endif
 
-   call init_clocks(.true.)
-
    nk_batches = 4 
+   !$omp parallel num_threads(nk_batches) default(shared)  shared(t0cpu, nclock, clock_label) 
+   call init_clocks(.true.)
+   !$omp end parallel
+
+
+ 
+
    allocate(npw_batched(nk_batches)) 
    allocate(notcnv_batched(nk_batches), dav_iter_batched(nk_batches), nhpsi_batched(nk_batches))
    call input(gamma_only)
@@ -68,11 +74,14 @@ program cb_davidson_main
    !$acc enter data create(evc, eig, fft_array_batched, aux_batched)
    
    do ik =1,nks, nk_batches
-     !$omp parallel default(shared) private(i_batch, current_k)
+     !$omp parallel num_threads(nk_batches) default(shared) private(i_batch, current_k) shared(t0cpu, nclock, clock_label) 
      !$omp do
-     do i_batch = 1, min(nk_batches, nks - ik +1)   
-       print '("First loop, batch ",I5)', i_batch 
+     do i_batch = 1, min(nk_batches, nks - ik +1) 
+       clock_thread = i_batch  
+       print '("First loop, batch ",3I5)', i_batch, clock_thread, omp_get_thread_num()  
        current_k = ik + i_batch -1   
+
+       call start_clock('davidson')
        call init_k(current_k, i_batch) 
        call init_random_wfcs(npw_batched(i_batch), npwx, nbnd, evc_batched(1,1,i_batch),i_batch)   
        !$acc host_data use_device(eig) 
@@ -81,6 +90,7 @@ program cb_davidson_main
                       eig_batched(1,i_batch), btype, notcnv_batched(i_batch), lrot, dav_iter_batched(i_batch), & 
                       nhpsi_batched(i_batch), i_batch )
        !$acc end host_data 
+        call stop_clock('davidson')
      end do 
      !$omp end parallel 
      
@@ -90,11 +100,9 @@ program cb_davidson_main
         current_k = ik + i_batch -1   
         !$acc update device(evc, igk) 
         
-        call start_clock('davidson')
 !--- THIS IS THE RELEVANT CALL TO THE ROUTINE IN KS_Solvers/Davidson ------------------------------------------!
 !--------------------------------------------------------------------------------------------------------------!
 
-        call stop_clock('davidson')
         !$acc update self(eig)
         
         
