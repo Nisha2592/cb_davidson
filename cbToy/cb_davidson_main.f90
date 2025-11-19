@@ -52,7 +52,7 @@ program cb_davidson_main
 !--------------------------------------------------------------------------------------------------------------!
 #endif
 
-   nk_batches = 4 
+   nk_batches = 6 
    !$omp parallel num_threads(nk_batches) default(shared)  shared(t0cpu, nclock, clock_label) 
    call init_clocks(.true.)
    !$omp end parallel
@@ -93,8 +93,8 @@ program cb_davidson_main
                       nhpsi_batched(i_batch), i_batch )
        !$acc end host_data 
      end do 
-     call stop_clock('davidson') 
      !$omp end parallel 
+     call stop_clock('davidson') 
      !$omp barrier   
      ! Second loop: Process batches sequentially
      do i_batch =1, min(nk_batches, nks - ik +1 )  
