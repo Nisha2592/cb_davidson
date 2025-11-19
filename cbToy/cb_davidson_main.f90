@@ -9,6 +9,7 @@ program cb_davidson_main
 #endif
    use mytime,               only: t0cpu, clock_label, nclock, clock_thread              
    use omp_lib,               only: omp_get_thread_num
+   !!use nvpl_lapack,         only: nvpl_lapack_set_num_threads
    implicit none
    !
    !include 'laxlib.fh'
@@ -72,16 +73,17 @@ program cb_davidson_main
    allocate( fft_array_batched(dfft%nnr, nk_batches), aux_batched(dfft%nnr, nk_batches) )
    allocate (evc(npwx, nbnd), eig(nbnd)) 
    !$acc enter data create(evc, eig, fft_array_batched, aux_batched)
-   
+
    do ik =1,nks, nk_batches
-     !$omp parallel num_threads(nk_batches) default(shared) private(i_batch, current_k) shared(t0cpu, nclock, clock_label) 
+     call start_clock('davidson')
+     !$omp parallel num_threads(nk_batches) default(shared) private(i_batch) shared(t0cpu, nclock, clock_label) 
      !$omp do
      do i_batch = 1, min(nk_batches, nks - ik +1) 
+       !clock thread is declared threadprivate in the module 
        clock_thread = i_batch  
        print '("First loop, batch ",3I5)', i_batch, clock_thread, omp_get_thread_num()  
        current_k = ik + i_batch -1   
 
-       call start_clock('davidson')
        call init_k(current_k, i_batch) 
        call init_random_wfcs(npw_batched(i_batch), npwx, nbnd, evc_batched(1,1,i_batch),i_batch)   
        !$acc host_data use_device(eig) 
@@ -90,10 +92,10 @@ program cb_davidson_main
                       eig_batched(1,i_batch), btype, notcnv_batched(i_batch), lrot, dav_iter_batched(i_batch), & 
                       nhpsi_batched(i_batch), i_batch )
        !$acc end host_data 
-        call stop_clock('davidson')
      end do 
+     call stop_clock('davidson') 
      !$omp end parallel 
-     
+     !$omp barrier   
      ! Second loop: Process batches sequentially
      do i_batch =1, min(nk_batches, nks - ik +1 )  
         print '("Second loop, batch ",I5)', i_batch 
