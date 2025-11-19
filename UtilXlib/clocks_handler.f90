@@ -109,7 +109,8 @@ SUBROUTINE init_clocks( go )
   USE cudafor
 #endif
 #if defined(_OPENMP) 
-  USE omp_lib, only: omp_init_lock, omp_get_max_threads, omp_get_thread_num, omp_get_num_threads
+  USE omp_lib, only: omp_init_lock, omp_get_max_threads, omp_get_thread_num, omp_get_num_threads, & 
+                     omp_in_parallel
   USE mytime, only: clock_locker 
 #endif
   !
@@ -120,9 +121,11 @@ SUBROUTINE init_clocks( go )
   !
 #if defined(_OPENMP)
   mpi_per_thread = 1.0_DP/omp_get_max_threads()
-  call omp_init_lock(clock_locker) 
-  nthreads = omp_get_num_threads() 
-  if (omp_get_thread_num() > 0) return  
+  if (omp_in_parallel()) then 
+     call omp_init_lock(clock_locker) 
+     nthreads = omp_get_num_threads() 
+     if (omp_get_thread_num() > 0) return
+  endif   
 #endif
   no = .not. go
   nclock = 0
@@ -195,6 +198,7 @@ SUBROUTINE start_clock( label )
   !
   CHARACTER(len=12):: label_
   INTEGER          :: n, mythread = 0 
+  logical, external :: omp_in_parallel
   !
 #if defined (__TRACE)
   if (trace_depth <= max_print_depth ) &  ! used to gauge the ammount of output
@@ -206,8 +210,12 @@ SUBROUTINE start_clock( label )
 
   IF ( no .and. ( nclock == 1 ) ) RETURN
 #if defined(_OPENMP) 
-  mythread = omp_get_thread_num() 
-  call omp_set_lock(clock_locker)  
+  if (omp_in_parallel()) then 
+     mythread = omp_get_thread_num() 
+     call omp_set_lock(clock_locker)  
+  else 
+     clock_thread = 1
+  end if
 #endif
   !
   ! ... prevent trouble if label is longer than 12 characters
@@ -232,7 +240,7 @@ SUBROUTINE start_clock( label )
         ENDIF
         !
 #if defined(_OPENMP) 
-        call omp_unset_lock(clock_locker) 
+        if (omp_in_parallel()) call omp_unset_lock(clock_locker) 
 #endif
 
         RETURN
@@ -258,7 +266,7 @@ SUBROUTINE start_clock( label )
   ENDIF
   !
 #if defined(_OPENMP) 
-  call omp_unset_lock(clock_locker) 
+  if (omp_in_parallel()) call omp_unset_lock(clock_locker) 
 #endif
   RETURN
   !
@@ -360,7 +368,7 @@ SUBROUTINE stop_clock( label )
                         notrunning, called, t0cpu, t0wall, f_wall, f_tcpu,clock_thread
   USE nvtx
 #if defined(_OPENMP) 
-  USE omp_lib, only: omp_get_thread_num, omp_set_lock, omp_unset_lock
+  USE omp_lib, only: omp_get_thread_num, omp_set_lock, omp_unset_lock, omp_in_parallel
   USE mytime, only: clock_locker
 #endif
  
@@ -389,7 +397,11 @@ SUBROUTINE stop_clock( label )
   label_ = trim ( label )
   !
 #if defined(_OPENMP) 
-  call omp_set_lock(clock_locker) 
+  if (omp_in_parallel()) then 
+    call omp_set_lock(clock_locker) 
+  else 
+    clock_thread =1 
+  end if
 #endif
   DO n = 1, nclock
      !
@@ -414,7 +426,7 @@ SUBROUTINE stop_clock( label )
         ENDIF
         !
 #if defined(_OPENMP) 
-        call omp_unset_lock(clock_locker) 
+        if (omp_in_parallel()) call omp_unset_lock(clock_locker) 
 #endif
         RETURN
         !
@@ -426,7 +438,7 @@ SUBROUTINE stop_clock( label )
   !
   WRITE( stdout, '("stop_clock: no clock for ",A12," found !")' ) label
 #if defined(_OPENMP) 
-  call omp_unset_lock(clock_locker) 
+  if (omp_in_parallel()) call omp_unset_lock(clock_locker) 
 #endif
   !
   RETURN
@@ -609,7 +621,7 @@ SUBROUTINE print_this_clock( n )
   INTEGER  :: nday, nhour, nmin, nmax, mday, mhour, mmin
   !
   !
-  IF ( t0cpu(n) == notrunning ) THEN
+  IF ( ALL(t0cpu(:,n) == notrunning) ) THEN
      !
      ! ... clock stopped, print the stored value for the cpu time
      !
@@ -620,9 +632,9 @@ SUBROUTINE print_this_clock( n )
      !
      ! ... clock not stopped, print the current value of the cpu time
      !
-     elapsed_cpu_time   = cputime(n) + f_tcpu() - t0cpu(n)
-     elapsed_wall_time  = walltime(n)+ f_wall() - t0wall(n)
-     called(n)  = called(n) + 1
+     elapsed_cpu_time   = cputime(n) + f_tcpu() - SUM(PACK(t0cpu(:,n), t0cpu(:,n)/= notrunning)) 
+     elapsed_wall_time  = walltime(n)+ f_wall() - SUM(PACK(t0wall(:,n),t0cpu(:,n)/= notrunning))  
+     called(n)  = called(n) + COUNT(t0cpu(:,n)/=notrunning) 
      !
   ENDIF
   !
