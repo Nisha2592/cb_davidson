@@ -158,5 +158,5 @@
   write (stdout,*) 'npwx =', npwx
   allocate ( igk_batched(npwx, nk_batches), ekin_batched(npwx,nk_batches), aux(npwx) )
   allocate (igk(npwx), ekin(npwx)) 
-  !$acc enter data copyin(dfft, dfft%nl,dfft%nnr, igk) 
+  !$acc enter data copyin(dfft, dfft%nl,dfft%nnr, igk_batched) 
  end subroutine ggen

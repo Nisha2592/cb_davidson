@@ -52,7 +52,7 @@ program cb_davidson_main
 !--------------------------------------------------------------------------------------------------------------!
 #endif
 
-   nk_batches = 6 
+   nk_batches = 2 
    !$omp parallel num_threads(nk_batches) default(shared)  shared(t0cpu, nclock, clock_label) 
    call init_clocks(.true.)
    !$omp end parallel
@@ -72,7 +72,7 @@ program cb_davidson_main
    allocate( evc_batched(npwx,nbnd,nk_batches), eig_batched(nbnd,nk_batches) )
    allocate( fft_array_batched(dfft%nnr, nk_batches), aux_batched(dfft%nnr, nk_batches) )
    allocate (evc(npwx, nbnd), eig(nbnd)) 
-   !$acc enter data create(evc, eig, fft_array_batched, aux_batched)
+   !$acc enter data create(evc_batched, eig_batched, fft_array_batched, aux_batched)
 
    do ik =1,nks, nk_batches
      call start_clock('davidson')
@@ -85,27 +85,31 @@ program cb_davidson_main
        current_k = ik + i_batch -1   
 
        call init_k(current_k, i_batch) 
-       call init_random_wfcs(npw_batched(i_batch), npwx, nbnd, evc_batched(1,1,i_batch),i_batch)   
-       !$acc host_data use_device(eig) 
+       !$acc update device(igk_batched(:,i_batch)) 
+       call init_random_wfcs(npw_batched(i_batch), npwx, nbnd, evc_batched(1,1,i_batch),i_batch)  
+       !$acc update device(evc_batched(:,:,i_batch)) 
+           
+       !$acc host_data use_device(eig_batched) 
        call cegterg( my_h_psi_batched, cb_s_psi_batched, overlap, cb_g_psi_batched, &
                       npw_batched(i_batch), npwx, nbnd, nbndx, npol, evc_batched(1,1,i_batch), ethr, &
                       eig_batched(1,i_batch), btype, notcnv_batched(i_batch), lrot, dav_iter_batched(i_batch), & 
                       nhpsi_batched(i_batch), i_batch )
        !$acc end host_data 
+        
      end do 
      !$omp end parallel 
      call stop_clock('davidson') 
      !$omp barrier   
+
+     !$acc update self(eig_batched)
      ! Second loop: Process batches sequentially
      do i_batch =1, min(nk_batches, nks - ik +1 )  
         print '("Second loop, batch ",I5)', i_batch 
         current_k = ik + i_batch -1   
-        !$acc update device(evc, igk) 
         
 !--- THIS IS THE RELEVANT CALL TO THE ROUTINE IN KS_Solvers/Davidson ------------------------------------------!
 !--------------------------------------------------------------------------------------------------------------!
 
-        !$acc update self(eig)
         
         
         if (energy_shift .and. current_k==1) ref=eig_batched(4*ncell**3,i_batch)
