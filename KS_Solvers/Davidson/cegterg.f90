@@ -38,6 +38,8 @@ SUBROUTINE cegterg( h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
   USE mp,            ONLY : mp_sum, mp_gather, mp_bcast, mp_size,&
                             mp_type_create_column_section, mp_type_free
   USE device_memcpy_m, ONLY : dev_memcpy, dev_memset
+  USE mytime,          ONLY : clock_thread !Fixed: import thread private varibale
+  USE openacc,         ONLY : acc_get_cuda_stream !Fixed
   !
   IMPLICIT NONE
   !
@@ -109,6 +111,14 @@ SUBROUTINE cegterg( h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
   INTEGER :: numblock
     ! chunking parameters
   INTEGER :: i,j,k
+  ! GPU stream management
+  INTEGER :: async_id
+  INTEGER(kind=8) :: mycudaStream
+#if defined(__CUDA)
+  type(cublasHandle) :: myblasHandle
+  INTEGER :: istat_cublas
+#endif
+
   !
   REAL(DP), EXTERNAL :: MYDDOT_VECTOR_GPU
   !$acc routine(MYDDOT_VECTOR_GPU) vector
@@ -126,6 +136,15 @@ SUBROUTINE cegterg( h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
   nhpsi = 0
   CALL start_clock( 'cegterg' ); !write(*,*) 'start cegterg' ; FLUSH(6)
   !
+  ! Setup GPU stream using clock_thread (Fixed)
+  async_id = clock_thread
+
+#if defined(__CUDA)
+  ! Get cuda stream and link cublas to it
+  mycudaStream = acc_get_cuda_stream(async_id)
+  istat_cublas = cublasCreate(myblasHandle)
+  istat_cublas = cublasSetStream(myblasHandle, mycudaStream)
+#endif
   !$acc data deviceptr(e)
   !
   IF ( nvec > nvecx / 2 ) CALL errore( 'cegterg', 'nvecx is too small', 1 )
@@ -157,13 +176,13 @@ SUBROUTINE cegterg( h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
   ALLOCATE( hpsi( npwx*npol, nvecx ), STAT=ierr )
   IF( ierr /= 0 ) &
      CALL errore( ' cegterg ',' cannot allocate hpsi ', ABS(ierr) )
-  !$acc enter data create(psi, hpsi)
+  !$acc enter data async(async_id) create(psi, hpsi)
   !
   IF ( uspp ) THEN
      ALLOCATE( spsi( npwx*npol, nvecx ), STAT=ierr )
      IF( ierr /= 0 ) &
         CALL errore( ' cegterg ',' cannot allocate spsi ', ABS(ierr) )
-     !$acc enter data create(spsi)
+     !$acc enter data async(async_id) create(spsi)
   END IF
   !
   ALLOCATE( sc( nvecx, nvecx ), STAT=ierr )
@@ -274,7 +293,7 @@ SUBROUTINE cegterg( h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
      CALL dev_memset(vc, ZERO, (/1, nbase/), 1, (/1, nbase/), 1)
      !$acc end host_data
      !
-     !$acc parallel loop 
+     !$acc parallel loop
      DO n = 1, nbase
         !
         e(n) = REAL( hc(n,n) )
@@ -682,15 +701,19 @@ SUBROUTINE cegterg( h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
   DEALLOCATE( sc )
   !
   IF ( uspp ) THEN
-     !$acc exit data delete(spsi)
+     !$acc exit data async(async_id) delete(spsi)
      DEALLOCATE( spsi )
   END IF
   !
-  !$acc exit data delete(psi, hpsi)
+  !$acc exit data async(async_id) delete(psi, hpsi)
   DEALLOCATE( hpsi )
   DEALLOCATE( psi )
   !
   !$acc end data 
+  ! Cleanup (Fixed)
+#if defined(__CUDA)
+  istat_cublas = cublasDestroy(myblasHandle)
+#endif
   !
   CALL stop_clock( 'cegterg' ); !write(*,*) 'stop cegterg' ; FLUSH(6)
   !call print_clock( 'cegterg' )
