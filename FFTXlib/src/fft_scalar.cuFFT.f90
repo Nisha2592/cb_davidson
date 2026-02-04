@@ -578,7 +578,6 @@ USE omp_lib, only: omp_set_lock, omp_unset_lock, omp_lock_kind
      CALL lookup()
 
      IF( ip == -1 ) THEN
-      print *,clock_thread, 'cfft3d_gpu: creating new plan for nx,ny,nz,howmany=',nx,ny,nz,howmany
 
        !   no table exist for these parameters
        !   initialize a new one
@@ -643,18 +642,15 @@ USE omp_lib, only: omp_set_lock, omp_unset_lock, omp_lock_kind
             STRIDE = 1
               DIST = ldx*ldy*ldz
              BATCH = howmany
-      print *, "here" 
        IF( cufft_plan_3d( icurrent) /=  0) THEN
            istat = cufftDestroy( cufft_plan_3d(icurrent) )
            call fftx_error__(" fft_scalar_cuFFT: cfft3d_gpu ", " cufftDestroy failed ", istat)
        ENDIF
-      print *, "there"
        istat = cufftPlanMany( cufft_plan_3d( icurrent), RANK, FFT_DIM, &
                               DATA_DIM, STRIDE, DIST, &
                               DATA_DIM, STRIDE, DIST, &
                               CUFFT_Z2Z, BATCH) 
      
-      print *, "everywhere"
        call fftx_error__(" fft_scalar_cuFFT: cfft3d_gpu ", " cufftPlanMany failed ", istat)
 
        !IF ( nx /= ldx .or. ny /= ldy .or. nz /= ldz ) &
