@@ -333,7 +333,7 @@ SUBROUTINE invfft_y_gpu( fft_kind, f_d, dfft, howmany, stream )
                             & many_cft3s_2d_gpu => many_cft3s_gpu
   USE fft_types,     ONLY: fft_type_descriptor
   USE fft_param,     ONLY: DP
-
+  USE mytime,        ONLY: clock_cuda_stream
   IMPLICIT NONE
 
   TYPE(fft_type_descriptor), INTENT(IN) :: dfft
@@ -356,7 +356,7 @@ SUBROUTINE invfft_y_gpu( fft_kind, f_d, dfft, howmany, stream )
   IF( present( stream ) ) THEN
     stream_ = stream
   ELSE
-    stream_ = 0
+    stream_ = clock_cuda_stream
   END IF
   !
   IF( fft_kind == 'Rho' ) THEN
@@ -375,7 +375,7 @@ SUBROUTINE invfft_y_gpu( fft_kind, f_d, dfft, howmany, stream )
      !IF( howmany_ /= 1 .and. fft_kind /= 'Wave' ) THEN
      !   CALL fftx_error__( ' invfft ', ' howmany not yet implemented for parallel driver ', 1 )
      !END IF
-     IF( stream_ /= 0 ) THEN
+     IF( stream_ /= clock_cuda_stream ) THEN
         CALL fftx_error__( ' invfft ', ' stream support not implemented for parallel driver ', 1 )
      END IF
      
@@ -454,6 +454,7 @@ SUBROUTINE fwfft_y_gpu( fft_kind, f_d, dfft, howmany, stream )
                               & many_cft3s_2d_gpu => many_cft3s_gpu
   USE fft_types,     ONLY: fft_type_descriptor
   USE fft_param,     ONLY: DP
+  USE mytime,        ONLY: clock_cuda_stream
 
   IMPLICIT NONE
 
@@ -477,7 +478,7 @@ SUBROUTINE fwfft_y_gpu( fft_kind, f_d, dfft, howmany, stream )
   IF( present( stream ) ) THEN
     stream_ = stream
   ELSE
-    stream_ = 0
+    stream_ = clock_cuda_stream
   END IF
   !
   IF( fft_kind == 'Rho' ) THEN
@@ -496,7 +497,7 @@ SUBROUTINE fwfft_y_gpu( fft_kind, f_d, dfft, howmany, stream )
      !IF( howmany_ /= 1 .and. fft_kind /= 'Wave' ) THEN
      !   CALL fftx_error__( ' fwfft ', ' howmany not yet implemented for parallel driver ', 1 )
      !END IF
-     IF( stream_ /= 0 ) THEN
+     IF( stream_ /= clock_cuda_stream ) THEN
         CALL fftx_error__( ' fwfft ', ' stream support not implemented for parallel driver ', 1 )
      END IF
      
