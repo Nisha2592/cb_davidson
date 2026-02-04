@@ -27,7 +27,11 @@ program h_psi_checker
     call my_h_psi(npwx, npw, nbnd, psi, hpsi) 
     do ib = 1, min(nbnd,20)
       eig =  13.5*dot_product(psi(:,ib),hpsi(:,ib)) 
+#if defined(__MPI)
       if (mpime == 0) print *, ik, ib, eig
+#else
+      print *, ik, ib, eig
+#endif
     end do
   end do   
 end program 
