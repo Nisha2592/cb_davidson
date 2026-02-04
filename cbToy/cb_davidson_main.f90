@@ -96,11 +96,11 @@ program cb_davidson_main
        current_k = ik + i_batch -1   
 
        call init_k(current_k, i_batch) 
-       !$acc update device(igk_batched(:,i_batch)) 
+       !$acc update device(igk_batched(:,i_batch)) async(clock_thread)
        call init_random_wfcs(npw_batched(i_batch), npwx, nbnd, evc_batched(1,1,i_batch),i_batch)  
-       !$acc update device(evc_batched(:,:,i_batch)) 
+       !$acc update device(evc_batched(:,:,i_batch)) async(clock_thread)
            
-       !$acc host_data use_device(eig_batched) 
+       !$acc host_data use_device(eig_batched)
        call cegterg( my_h_psi_batched, cb_s_psi_batched, overlap, cb_g_psi_batched, &
                       npw_batched(i_batch), npwx, nbnd, nbndx, npol, evc_batched(1,1,i_batch), ethr, &
                       eig_batched(1,i_batch), btype, notcnv_batched(i_batch), lrot, dav_iter_batched(i_batch), & 
@@ -111,8 +111,8 @@ program cb_davidson_main
      !$omp end parallel 
      call stop_clock('davidson') 
      !$omp barrier   
-
-     !$acc update self(eig_batched)
+     !$acc wait
+     !$acc update self(eig_batched) 
      ! Second loop: Process batches sequentially
      do i_batch =1, min(nk_batches, nks - ik +1 )  
         print '("Second loop, batch ",I5)', i_batch 
