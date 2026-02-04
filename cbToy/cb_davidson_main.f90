@@ -7,8 +7,11 @@ program cb_davidson_main
    use mp_world,             ONLY : world_comm
    use mp_bands,             ONLY : intra_bgrp_comm, inter_bgrp_comm
 #endif
-   use mytime,               only: t0cpu, clock_label, nclock, clock_thread              
+   use mytime,               only: t0cpu, clock_label, nclock, clock_thread, clock_cuda_stream             
    use omp_lib,               only: omp_get_thread_num
+#if defined(__CUDA)
+   use openacc,               only: acc_get_cuda_stream
+#endif
    !!use nvpl_lapack,         only: nvpl_lapack_set_num_threads
    implicit none
    !
@@ -19,6 +22,7 @@ program cb_davidson_main
    complex(DP), allocatable :: evc(:,:), evc_batched(:,:,:) 
    real(dp), allocatable :: eig(:), eig_batched(:,:) 
    integer, parameter :: npol=1
+   integer :: dummy
    integer :: notcnv, dav_iter, nhpsi
    integer, allocatable :: notcnv_batched(:), dav_iter_batched(:), nhpsi_batched(:)
    logical :: overlap = .false. , lrot =.false.
@@ -55,6 +59,14 @@ program cb_davidson_main
    !
    !$omp parallel num_threads(nk_batches) default(shared)  shared(t0cpu, nclock, clock_label) 
    call init_clocks(.true.)
+#if defined(__CUDA)
+   !$omp do 
+   do i_batch = 1, nk_batches
+      clock_thread = i_batch
+      clock_cuda_stream = acc_get_cuda_stream(clock_thread)
+      print '("Initialized default stream in thread ",2I5,I24)', omp_get_thread_num(), clock_thread, clock_cuda_stream
+   end do
+#endif
    !$omp end parallel
 
 
@@ -65,7 +77,6 @@ program cb_davidson_main
    call input(gamma_only)
    call ggen(gamma_only)
    call set_cb_potential
-
    if (use_overlap) write(*,*) '** TEST:  CB hamiltonian modified so as to need an overlap matrix **'
    overlap = use_overlap
 

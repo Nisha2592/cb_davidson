@@ -36,6 +36,7 @@ MODULE mytime
   USE parallel_include
 #if defined(__CUDA)
   USE cudafor
+  USE openacc, ONLY: acc_handle_kind
 #endif
 #if defined(_OPENMP)
   USE omp_lib,only: omp_lock_kind
@@ -61,6 +62,10 @@ MODULE mytime
   REAL(DP)          :: mpi_per_thread = 1.0_DP
 
   INTEGER :: nclock = 0
+#if defined(__CUDA)
+  INTEGER(acc_handle_kind) :: clock_cuda_stream
+  !$omp threadprivate (clock_cuda_stream)
+#endif
   INTEGER :: clock_thread = 0 
   !$omp threadprivate (clock_thread)
   LOGICAL :: no
