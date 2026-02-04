@@ -49,7 +49,8 @@ target_link_libraries(qe_fftx
         qe_fftx_c
         qe_ext_fft
         qe_openmp_fortran
-        qe_mpi_fortran)
+        qe_mpi_fortran
+        qe_utilx)
 if(QE_ENABLE_CUDA)
     target_link_libraries(qe_fftx
         PUBLIC
