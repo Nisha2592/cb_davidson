@@ -52,7 +52,7 @@ program cb_davidson_main
 !--------------------------------------------------------------------------------------------------------------!
 #endif
 
-   nk_batches = 2 
+   !
    !$omp parallel num_threads(nk_batches) default(shared)  shared(t0cpu, nclock, clock_label) 
    call init_clocks(.true.)
    !$omp end parallel
