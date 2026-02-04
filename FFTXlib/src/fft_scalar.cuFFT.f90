@@ -7,8 +7,11 @@
 ! or http://www.gnu.org/copyleft/gpl.txt .
 
 !=----------------------------------------------------------------------=!
-   MODULE fft_scalar_cuFFT
+MODULE fft_scalar_cuFFT
 !=----------------------------------------------------------------------=!
+#if defined(_OPEMP)
+USE omp_lib, only: omp_set_lock, omp_unset_lock, omp_lock_kind
+#endif
 #ifdef __CUDA
 #define __CUFFT_ALL_XY_PLANES
        USE fft_param
@@ -18,9 +21,20 @@
        USE cufft
 
        IMPLICIT NONE
+#if defined(_OPEMP)
+       INTEGER(kind=omp_lock_kind), SAVE :: fftx_lock 
+#endif
        SAVE
        PRIVATE
        PUBLIC :: cft_1z_gpu, cft_2xy_gpu, cfft3d_gpu, cfft3ds_gpu
+       INTEGER, SAVE :: icurrent = 1
+       INTEGER, SAVE :: dims(4,ndims) = -1
+       !$omp threadprivate (dims, icurrent)
+
+ !     C_POINTER, save :: fw_plan(ndims) = 0
+!      C_POINTER, save :: bw_plan(ndims) = 0
+       INTEGER, SAVE :: cufft_plan_3d( ndims ) = 0
+      !$omp threadprivate (cufft_plan_3d)
 
 !=----------------------------------------------------------------------=!
    CONTAINS
@@ -532,7 +546,8 @@
   !
   !     Up to "ndims" initializations (for different combinations of input
   !     parameters nx,ny,nz) are stored and re-used if available
-
+    
+     USE mytime, ONLY : clock_cuda_stream, clock_thread
      IMPLICIT NONE
 
      INTEGER, INTENT(IN) :: nx, ny, nz, ldx, ldy, ldz, howmany, isign
@@ -540,13 +555,14 @@
      INTEGER(kind = cuda_stream_kind) :: stream
      INTEGER :: i, k, j, err, idir, ip, istat
      REAL(DP) :: tscale
-     INTEGER, SAVE :: icurrent = 1
-     INTEGER, SAVE :: dims(4,ndims) = -1
+     !INTEGER, SAVE :: icurrent = 1
+     !INTEGER, SAVE :: dims(4,ndims) = -1
+     !!$omp threadprivate (dims, icurrent)
 
 !     C_POINTER, save :: fw_plan(ndims) = 0
 !     C_POINTER, save :: bw_plan(ndims) = 0
-     INTEGER, SAVE :: cufft_plan_3d( ndims ) = 0
-
+     !INTEGER, SAVE :: cufft_plan_3d( ndims ) = 0
+     !!$omp threadprivate (cufft_plan_3d)
 
      IF ( nx < 1 ) &
          call fftx_error__('cfft3d',' nx is less than 1 ', 1)
@@ -562,6 +578,7 @@
      CALL lookup()
 
      IF( ip == -1 ) THEN
+      print *,clock_thread, 'cfft3d_gpu: creating new plan for nx,ny,nz,howmany=',nx,ny,nz,howmany
 
        !   no table exist for these parameters
        !   initialize a new one
@@ -569,7 +586,6 @@
        CALL init_plan()
 
      END IF
-
      !
      !   Now perform the 3D FFT using the machine specific driver
      !
@@ -627,16 +643,18 @@
             STRIDE = 1
               DIST = ldx*ldy*ldz
              BATCH = howmany
-
-       IF( cufft_plan_3d( icurrent) /= 0 ) THEN
+      print *, "here" 
+       IF( cufft_plan_3d( icurrent) /=  0) THEN
            istat = cufftDestroy( cufft_plan_3d(icurrent) )
            call fftx_error__(" fft_scalar_cuFFT: cfft3d_gpu ", " cufftDestroy failed ", istat)
        ENDIF
-
+      print *, "there"
        istat = cufftPlanMany( cufft_plan_3d( icurrent), RANK, FFT_DIM, &
                               DATA_DIM, STRIDE, DIST, &
                               DATA_DIM, STRIDE, DIST, &
-                              CUFFT_Z2Z, BATCH )
+                              CUFFT_Z2Z, BATCH) 
+     
+      print *, "everywhere"
        call fftx_error__(" fft_scalar_cuFFT: cfft3d_gpu ", " cufftPlanMany failed ", istat)
 
        !IF ( nx /= ldx .or. ny /= ldy .or. nz /= ldz ) &
