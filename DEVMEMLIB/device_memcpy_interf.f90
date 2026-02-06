@@ -2377,6 +2377,202 @@ interface dev_memcpy_async
        !
     end subroutine i4_memcpy_h2d_async_i4d
     !
+    subroutine dp_dev_memcpy_async_r1d(array_out, array_in, stream, &
+                                             range1, lbound1  )
+#if defined(__CUDA)
+       use cudafor
+#endif 
+       use iso_fortran_env
+       implicit none
+       !
+       real(real64), intent(inout) :: array_out(:)
+       real(real64), intent(in)    :: array_in(:)
+#if defined(__CUDA)
+       integer(kind=cuda_Stream_Kind), intent(in) :: stream
+#else
+       integer, intent(in) :: stream
+#endif
+       integer, optional, intent(in) :: range1(2)
+       integer, optional, intent(in) :: lbound1
+#if defined(__CUDA)
+       attributes(device) :: array_out, array_in
+#endif
+       !
+    end subroutine dp_dev_memcpy_async_r1d
+    !
+    subroutine dp_dev_memcpy_async_r2d(array_out, array_in, stream, &
+                                             range1, lbound1 , &
+                                             range2, lbound2  )
+#if defined(__CUDA)
+       use cudafor
+#endif 
+       use iso_fortran_env
+       implicit none
+       !
+       real(real64), intent(inout) :: array_out(:,:)
+       real(real64), intent(in)    :: array_in(:,:)
+#if defined(__CUDA)
+       integer(kind=cuda_Stream_Kind), intent(in) :: stream
+#else
+       integer, intent(in) :: stream
+#endif
+       integer, optional, intent(in) :: range1(2),range2(2)
+       integer, optional, intent(in) :: lbound1,lbound2
+#if defined(__CUDA)
+       attributes(device) :: array_out, array_in
+#endif
+       !
+    end subroutine dp_dev_memcpy_async_r2d
+    !
+    subroutine dp_dev_memcpy_async_r3d(array_out, array_in, stream, &
+                                             range1, lbound1 , &
+                                             range2, lbound2 , &
+                                             range3, lbound3  )
+#if defined(__CUDA)
+       use cudafor
+#endif 
+       use iso_fortran_env
+       implicit none
+       !
+       real(real64), intent(inout) :: array_out(:,:,:)
+       real(real64), intent(in)    :: array_in(:,:,:)
+#if defined(__CUDA)
+       integer(kind=cuda_Stream_Kind), intent(in) :: stream
+#else
+       integer, intent(in) :: stream
+#endif
+       integer, optional, intent(in) :: range1(2),range2(2),range3(2)
+       integer, optional, intent(in) :: lbound1,lbound2,lbound3
+#if defined(__CUDA)
+       attributes(device) :: array_out, array_in
+#endif
+       !
+    end subroutine dp_dev_memcpy_async_r3d
+    !
+    subroutine dp_dev_memcpy_async_r4d(array_out, array_in, stream, &
+                                             range1, lbound1 , &
+                                             range2, lbound2 , &
+                                             range3, lbound3 , &
+                                             range4, lbound4  )
+#if defined(__CUDA)
+       use cudafor
+#endif 
+       use iso_fortran_env
+       implicit none
+       !
+       real(real64), intent(inout) :: array_out(:,:,:,:)
+       real(real64), intent(in)    :: array_in(:,:,:,:)
+#if defined(__CUDA)
+       integer(kind=cuda_Stream_Kind), intent(in) :: stream
+#else
+       integer, intent(in) :: stream
+#endif
+       integer, optional, intent(in) :: range1(2),range2(2),range3(2),range4(2)
+       integer, optional, intent(in) :: lbound1,lbound2,lbound3,lbound4
+#if defined(__CUDA)
+       attributes(device) :: array_out, array_in
+#endif
+       !
+    end subroutine dp_dev_memcpy_async_r4d
+    !
+    subroutine dp_dev_memcpy_async_c1d(array_out, array_in, stream, &
+                                             range1, lbound1  )
+#if defined(__CUDA)
+       use cudafor
+#endif 
+       use iso_fortran_env
+       implicit none
+       !
+       complex(real64), intent(inout) :: array_out(:)
+       complex(real64), intent(in)    :: array_in(:)
+#if defined(__CUDA)
+       integer(kind=cuda_Stream_Kind), intent(in) :: stream
+#else
+       integer, intent(in) :: stream
+#endif
+       integer, optional, intent(in) :: range1(2)
+       integer, optional, intent(in) :: lbound1
+#if defined(__CUDA)
+       attributes(device) :: array_out, array_in
+#endif
+       !
+    end subroutine dp_dev_memcpy_async_c1d
+    !
+    subroutine dp_dev_memcpy_async_c2d(array_out, array_in, stream, &
+                                             range1, lbound1 , &
+                                             range2, lbound2  )
+#if defined(__CUDA)
+       use cudafor
+#endif 
+       use iso_fortran_env
+       implicit none
+       !
+       complex(real64), intent(inout) :: array_out(:,:)
+       complex(real64), intent(in)    :: array_in(:,:)
+#if defined(__CUDA)
+       integer(kind=cuda_Stream_Kind), intent(in) :: stream
+#else
+       integer, intent(in) :: stream
+#endif
+       integer, optional, intent(in) :: range1(2),range2(2)
+       integer, optional, intent(in) :: lbound1,lbound2
+#if defined(__CUDA)
+       attributes(device) :: array_out, array_in
+#endif
+       !
+    end subroutine dp_dev_memcpy_async_c2d
+    !
+    subroutine dp_dev_memcpy_async_c3d(array_out, array_in, stream, &
+                                             range1, lbound1 , &
+                                             range2, lbound2 , &
+                                             range3, lbound3  )
+#if defined(__CUDA)
+       use cudafor
+#endif 
+       use iso_fortran_env
+       implicit none
+       !
+       complex(real64), intent(inout) :: array_out(:,:,:)
+       complex(real64), intent(in)    :: array_in(:,:,:)
+#if defined(__CUDA)
+       integer(kind=cuda_Stream_Kind), intent(in) :: stream
+#else
+       integer, intent(in) :: stream
+#endif
+       integer, optional, intent(in) :: range1(2),range2(2),range3(2)
+       integer, optional, intent(in) :: lbound1,lbound2,lbound3
+#if defined(__CUDA)
+       attributes(device) :: array_out, array_in
+#endif
+       !
+    end subroutine dp_dev_memcpy_async_c3d
+    !
+    subroutine dp_dev_memcpy_async_c4d(array_out, array_in, stream, &
+                                             range1, lbound1 , &
+                                             range2, lbound2 , &
+                                             range3, lbound3 , &
+                                             range4, lbound4  )
+#if defined(__CUDA)
+       use cudafor
+#endif 
+       use iso_fortran_env
+       implicit none
+       !
+       complex(real64), intent(inout) :: array_out(:,:,:,:)
+       complex(real64), intent(in)    :: array_in(:,:,:,:)
+#if defined(__CUDA)
+       integer(kind=cuda_Stream_Kind), intent(in) :: stream
+#else
+       integer, intent(in) :: stream
+#endif
+       integer, optional, intent(in) :: range1(2),range2(2),range3(2),range4(2)
+       integer, optional, intent(in) :: lbound1,lbound2,lbound3,lbound4
+#if defined(__CUDA)
+       attributes(device) :: array_out, array_in
+#endif
+       !
+    end subroutine dp_dev_memcpy_async_c4d
+    !
     !
 #endif
     !
