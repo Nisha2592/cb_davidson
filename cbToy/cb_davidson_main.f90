@@ -58,12 +58,14 @@ program cb_davidson_main
 #endif
 
    ! 
+
+   call input(gamma_only)
    print *, 'Running cb_davidson_main with the following parameters:'
    call initialize_cusolver_handles(nk_batches) 
    print *, 'nk_batches = ', nk_batches
    !$omp parallel num_threads(nk_batches) default(shared)  shared(t0cpu, nclock, clock_label) 
    call init_clocks(.true.)
-#if defined(_CUDA)
+#if defined(__CUDA)
    !$omp do 
    do i_batch = 1, nk_batches
       clock_thread = i_batch
@@ -79,7 +81,6 @@ program cb_davidson_main
 
    allocate(npw_batched(nk_batches)) 
    allocate(notcnv_batched(nk_batches), dav_iter_batched(nk_batches), nhpsi_batched(nk_batches))
-   call input(gamma_only)
    call ggen(gamma_only)
    call set_cb_potential
    if (use_overlap) write(*,*) '** TEST:  CB hamiltonian modified so as to need an overlap matrix **'
@@ -104,19 +105,17 @@ program cb_davidson_main
        !$acc update device(igk_batched(:,i_batch)) async(clock_thread)
        call init_random_wfcs(npw_batched(i_batch), npwx, nbnd, evc_batched(1,1,i_batch),i_batch)  
        !$acc update device(evc_batched(:,:,i_batch)) async(clock_thread)
-           
        !$acc host_data use_device(eig_batched)
        call cegterg( my_h_psi_batched, cb_s_psi_batched, overlap, cb_g_psi_batched, &
                       npw_batched(i_batch), npwx, nbnd, nbndx, npol, evc_batched(1,1,i_batch), ethr, &
                       eig_batched(1,i_batch), btype, notcnv_batched(i_batch), lrot, dav_iter_batched(i_batch), & 
                       nhpsi_batched(i_batch), i_batch )
-       !$acc end host_data 
-        
+       !$acc end host_data  
      end do 
      !$omp end parallel 
      call stop_clock('davidson') 
      !$omp barrier   
-     !$acc wait
+     !$acc wait  
      !$acc update self(eig_batched) 
      ! Second loop: Process batches sequentially
      do i_batch =1, min(nk_batches, nks - ik +1 )  
