@@ -224,7 +224,8 @@ SUBROUTINE laxlib_cdiaghg_gpu( n, m, h_d, s_d, ldh, e_d, v_d, me_bgrp, root_bgrp
   USE cudafor
   !
   USE cusolverdn
-  USE laxlib_cusolver_handles, ONLY : cusolver_handle, cusolver_initialized, laxlib_cuda_stream 
+  USE laxlib_cusolver_handles, ONLY : cusolver_handle, cusolver_initialized, laxlib_cuda_stream, & 
+                                      cusolver_thread 
 #endif
   !
   USE laxlib_parallel_include
@@ -324,7 +325,7 @@ SUBROUTINE laxlib_cdiaghg_gpu( n, m, h_d, s_d, ldh, e_d, v_d, me_bgrp, root_bgrp
       IF( info /= 0 ) CALL lax_error__( ' cdiaghg_gpu ', ' cannot allocate s_bkp_d ', ABS( info ) )
 #endif
       !
-!$cuf kernel do(2)
+!$cuf kernel do(2) <<<*,*,0,laxlib_cuda_stream>>>
       DO j=1,n
          DO i=1,n
             h_bkp_d(i,j) = h_d(i,j)
@@ -335,12 +336,15 @@ SUBROUTINE laxlib_cdiaghg_gpu( n, m, h_d, s_d, ldh, e_d, v_d, me_bgrp, root_bgrp
 #if defined(_OPENMP)
       IF (omp_get_num_threads() > 1) CALL lax_error__( ' cdiaghg_gpu ', 'cdiaghg_gpu is not thread-safe',  ABS( info ) )
 #endif
-      IF ( .NOT. cuSolverInitialized ) THEN
-         info = cusolverDnCreate(cuSolverHandle)
+      IF ( .NOT. cusolver_initialized(cusolver_thread) ) THEN
+         info = cusolverDnCreate(cusolver_handle(cusolver_thread))
          IF ( info /= CUSOLVER_STATUS_SUCCESS ) CALL lax_error__( ' cdiaghg_gpu ', 'cusolverDnCreate',  ABS( info ) )
-         cuSolverInitialized = .TRUE.
+         cusolver_initialized(cusolver_thread) = .TRUE.
+         info = cusolverDnSetStream(cusolver_handle(cusolver_thread), laxlib_cuda_stream )
+         IF ( info /= CUSOLVER_STATUS_SUCCESS ) CALL lax_error__( ' cdiaghg_gpu ', 'cusolverDnSetStream',  ABS( info ) )   
       ENDIF
       !
+      cuSolverHandle = cusolver_handle(cusolver_thread)
       info = cusolverDnZhegvdx_bufferSize(cuSolverHandle, CUSOLVER_EIG_TYPE_1, CUSOLVER_EIG_MODE_VECTOR, CUSOLVER_EIG_RANGE_I, CUBLAS_FILL_MODE_UPPER, &
                                                n, h_d, ldh, s_d, ldh, 0.D0, 0.D0, 1, m, h_meig, e_d, lwork_d)
       IF( info /= CUSOLVER_STATUS_SUCCESS ) CALL lax_error__( ' cdiaghg_gpu ', ' cusolverDnZhegvdx_bufferSize failed ', ABS( info ) )
@@ -356,7 +360,7 @@ SUBROUTINE laxlib_cdiaghg_gpu( n, m, h_d, s_d, ldh, e_d, v_d, me_bgrp, root_bgrp
       info = cusolverDnZhegvdx(cuSolverHandle, CUSOLVER_EIG_TYPE_1, CUSOLVER_EIG_MODE_VECTOR, CUSOLVER_EIG_RANGE_I, CUBLAS_FILL_MODE_UPPER, &
                                   n, h_d, ldh, s_d, ldh, 0.D0, 0.D0, 1, m, h_meig, e_d, work_d, lwork, devInfo_d)
       IF( info /= CUSOLVER_STATUS_SUCCESS ) CALL lax_error__( ' cdiaghg_gpu ', ' cusolverDnZhegvdx failed ', ABS( info ) )
-!$cuf kernel do(2)
+!$cuf kernel do(2) <<<*,*,0,laxlib_cuda_stream>>>
       DO j=1,n
          DO i=1,n
             IF(j <= m) v_d(i,j) = h_d(i,j)
