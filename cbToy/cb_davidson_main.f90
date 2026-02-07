@@ -11,6 +11,7 @@ program cb_davidson_main
    use omp_lib,               only: omp_get_thread_num
 #if defined(__CUDA)
    use openacc,               only: acc_get_cuda_stream
+   use laxlib_cusolver_handles, ONLY : initialize_cusolver_handles, initialize_laxlib_cuda_stream
 #endif
    !!use nvpl_lapack,         only: nvpl_lapack_set_num_threads
    implicit none
@@ -56,16 +57,20 @@ program cb_davidson_main
 !--------------------------------------------------------------------------------------------------------------!
 #endif
 
-   !
+   ! 
+   print *, 'Running cb_davidson_main with the following parameters:'
+   call initialize_cusolver_handles(nk_batches) 
+   print *, 'nk_batches = ', nk_batches
    !$omp parallel num_threads(nk_batches) default(shared)  shared(t0cpu, nclock, clock_label) 
    call init_clocks(.true.)
-#if defined(__CUDA)
+#if defined(_CUDA)
    !$omp do 
    do i_batch = 1, nk_batches
       clock_thread = i_batch
       clock_cuda_stream = acc_get_cuda_stream(clock_thread)
+      call initialize_laxlib_cuda_stream(clock_cuda_stream, clock_thread)
       print '("Initialized default stream in thread ",2I5,I24)', omp_get_thread_num(), clock_thread, clock_cuda_stream
-   end do
+   end do 
 #endif
    !$omp end parallel
 
