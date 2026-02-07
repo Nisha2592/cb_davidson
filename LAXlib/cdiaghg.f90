@@ -224,6 +224,7 @@ SUBROUTINE laxlib_cdiaghg_gpu( n, m, h_d, s_d, ldh, e_d, v_d, me_bgrp, root_bgrp
   USE cudafor
   !
   USE cusolverdn
+  USE laxlib_cusolver_handles, ONLY : cusolver_handle, cusolver_initialized, laxlib_cuda_stream 
 #endif
   !
   USE laxlib_parallel_include
