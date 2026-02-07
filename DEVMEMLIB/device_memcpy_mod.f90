@@ -15,8 +15,10 @@
 !
 module device_memcpy_m
   implicit none
-
 #include "device_memcpy_interf.f90"
+#ifdef __CUDA
+  #include "device_memset_async_interface.f90"
+#endif
 
 end module device_memcpy_m
 
