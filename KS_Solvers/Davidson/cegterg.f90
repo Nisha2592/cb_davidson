@@ -39,7 +39,7 @@ SUBROUTINE cegterg( h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
                             mp_type_create_column_section, mp_type_free
   USE device_memcpy_m, ONLY : dev_memcpy, dev_memset, dev_memcpy_async, &
                               dev_memset_async !Fixed: import device memory management routines
-  USE mytime,          ONLY : clock_thread !Fixed: import thread private varibale
+  USE mytime,          ONLY : clock_thread, clock_cuda_stream !Fixed: import thread private varibale
   USE openacc,         ONLY : acc_get_cuda_stream !Fixed
   !
   IMPLICIT NONE
@@ -142,11 +142,11 @@ SUBROUTINE cegterg( h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
 
 #if defined(__CUDA)
   ! Get cuda stream and link cublas to it
-  mycudaStream = acc_get_cuda_stream(async_id)
+  mycudaStream = clock_cuda_stream
   istat_cublas = cublasCreate(myblasHandle)
   istat_cublas = cublasSetStream(myblasHandle, mycudaStream)
 #endif
-  !$acc data deviceptr(e) async(async_id)
+  !$acc data deviceptr(e) async(async_id) 
   !
   IF ( nvec > nvecx / 2 ) CALL errore( 'cegterg', 'nvecx is too small', 1 )
   !
@@ -348,7 +348,7 @@ SUBROUTINE cegterg( h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
            ! ... multiplications to set a new basis vector (see below)
            !
            IF ( np /= n ) THEN
-             !$acc parallel loop 
+             !$acc parallel loop async(async_id)  
              DO i = 1, nvecx
                vc(i,np) = vc(i,n)
              END DO 
@@ -421,8 +421,8 @@ SUBROUTINE cegterg( h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
      CALL mp_sum( psi(:,nb1:nbase+notcnv), inter_bgrp_comm )
      !
      ! clean up garbage if there is any
-     IF (npw < npwx) CALL dev_memset(psi, ZERO, [npw+1,npwx], 1, [nb1, nbase+notcnv])
-     IF (npol == 2)  CALL dev_memset(psi, ZERO, [npwx+npw+1,2*npwx], 1, [nb1, nbase+notcnv])
+     IF (npw < npwx) CALL dev_memset_async(psi, ZERO, mycudaStream, [npw+1,npwx], 1, [nb1, nbase+notcnv])
+     IF (npol == 2)  CALL dev_memset_async(psi, ZERO, mycudaStream, [npwx+npw+1,2*npwx], 1, [nb1, nbase+notcnv])
      !
      CALL stop_clock( 'cegterg:update' )
      !
@@ -437,7 +437,7 @@ SUBROUTINE cegterg( h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
      !
      ! ...         ew = <psi_i|psi_i>,  i = nbase + 1, nbase + notcnv
      !
-     !$acc parallel vector_length(96) 
+     !$acc parallel vector_length(96) async(async_id)  
      !$acc loop gang private(nbn)
      DO n = 1, notcnv
         !
@@ -461,7 +461,7 @@ SUBROUTINE cegterg( h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
      !$acc end host_data
      !
 #if defined(__CUDA)
-     !$acc parallel loop collapse(3) 
+     !$acc parallel loop collapse(3) async(async_id) 
      DO i = 1,notcnv
         DO ipol = 1,npol
            DO k=1,npw
@@ -540,7 +540,7 @@ SUBROUTINE cegterg( h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
      !
      nbase = nbase + notcnv
      !
-     !$acc parallel vector_length(64)
+     !$acc parallel vector_length(64) async(async_id) 
      !$acc loop gang
      DO n = 1, nbase
         !
@@ -578,7 +578,7 @@ SUBROUTINE cegterg( h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
      !
      ! ... test for convergence
      !
-     !$acc parallel loop copy(conv(1:nvec)) copyin(btype(1:nvec))
+     !$acc parallel loop copy(conv(1:nvec)) copyin(btype(1:nvec)) async(async_id)
      DO i = 1, nvec
        IF(btype(i) == 1) THEN
          conv(i) = ( ( ABS( ew(i) - e(i) ) < ethr ) )
@@ -593,7 +593,7 @@ SUBROUTINE cegterg( h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
      notcnv = COUNT( .NOT. conv(:) )
      !
      !$acc host_data use_device(ew)
-     CALL dev_memcpy (e, ew, (/ 1, nvec /) )
+     CALL dev_memcpy_async (e, ew, mycudaStream, (/ 1, nvec /) )
      !$acc end host_data
      !
      ! ... if overall convergence has been achieved, or the dimension of
@@ -639,14 +639,14 @@ SUBROUTINE cegterg( h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
         ! ... refresh psi, H*psi and S*psi
         !
         !$acc host_data use_device(evc, psi, hpsi, spsi, vc)
-        CALL dev_memcpy(psi, evc, (/ 1, npwx*npol /), 1, &
+        CALL dev_memcpy_async(psi, evc, mycudaStream, (/ 1, npwx*npol /), 1, &
                                       (/ 1, nvec /), 1)
         !
         IF ( uspp ) THEN
            !
            CALL ZGEMM( 'N','N', kdim, nvec, my_n, ONE, spsi(1,n_start), kdmx, vc(n_start,1), nvecx, &
                        ZERO, psi(1,nvec+1), kdmx)
-           CALL dev_memcpy(spsi, psi(:,nvec+1:), &
+           CALL dev_memcpy_async(spsi, psi(:,nvec+1:), mycudaStream,&
                                         (/1, npwx*npol/), 1, &
                                         (/1, nvec/), 1)
            CALL mp_sum( spsi(:,1:nvec), inter_bgrp_comm )
@@ -670,7 +670,7 @@ SUBROUTINE cegterg( h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
         !sc(1:nbase,1:nbase) = ZERO
         !vc(1:nbase,1:nbase) = ZERO
         !
-        !$acc kernels 
+        !$acc kernels  async(async_id) 
         DO n = 1, nbase
            hc(n,n) = CMPLX( e(n), 0.0_DP ,kind=DP)
            sc(n,n) = ONE
