@@ -1,5 +1,13 @@
- &system crystal_name='Si', ecutwfc = 8.d0, ethr=1.d-6,  /
-3
+ &system crystal_name='Si', ecutwfc = 20.d0, ethr=1.d-6,  nk_batches=2/
+11
 0.0 0.0 0.0
+0.5 0.5 0.5
+1.0 0.0 0.0
+0.0 0.0 0.0
+0.5 0.5 0.5
+1.0 0.0 0.0
+0.0 0.0 0.0
+0.5 0.5 0.5
+1.0 0.0 0.0
 0.5 0.5 0.5
 1.0 0.0 0.0
