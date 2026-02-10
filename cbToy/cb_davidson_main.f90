@@ -97,7 +97,13 @@ program cb_davidson_main
      !$omp do
      do i_batch = 1, min(nk_batches, nks - ik +1) 
        !clock thread is declared threadprivate in the module 
-       clock_thread = i_batch  
+       clock_thread = i_batch 
+
+     #if defined(__CUDA) !Fixed
+   ! Reset stream for this thread in this parallel region
+       clock_cuda_stream = acc_get_cuda_stream(clock_thread)
+     #endif 
+
        print '("First loop, batch ",3I5)', i_batch, clock_thread, omp_get_thread_num()  
        current_k = ik + i_batch -1   
 
@@ -114,7 +120,7 @@ program cb_davidson_main
      end do 
      !$omp end parallel 
      call stop_clock('davidson') 
-     !$omp barrier   
+     ! !$omp barrier   !Remove
      !$acc wait  
      !$acc update self(eig_batched) 
      ! Second loop: Process batches sequentially
@@ -131,7 +137,7 @@ program cb_davidson_main
      
         call write_bands(eig_batched(1,i_batch),ref)
         write (stdout,*) 'batch', i_batch, 'dav_iter, nhpsi, notcnv, ethr ', &
-                         dav_iter, nhpsi, notcnv, ethr
+                         dav_iter_batched(i_batch), nhpsi_batched(i_batch), notcnv_batched(i_batch), ethr !Fixed
      end do 
    end do
    
