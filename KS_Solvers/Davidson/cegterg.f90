@@ -39,8 +39,11 @@ SUBROUTINE cegterg( h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
                             mp_type_create_column_section, mp_type_free
   USE device_memcpy_m, ONLY : dev_memcpy, dev_memset, dev_memcpy_async, &
                               dev_memset_async !Fixed: import device memory management routines
-  USE mytime,          ONLY : clock_thread, clock_cuda_stream !Fixed: import thread private varibale
+  USE mytime,          ONLY : clock_thread, clock_cuda_stream, cegterg_locker !Fixed: import thread private varibale
   USE openacc,         ONLY : acc_get_cuda_stream !Fixed
+#if defined(_OPENMP) 
+  USE omp_lib, only:  omp_set_lock, omp_unset_lock
+#endif
   !
   IMPLICIT NONE
   !
@@ -96,7 +99,7 @@ SUBROUTINE cegterg( h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
     ! S matrix on the reduced basis
     ! the eigenvectors of the Hamiltonian
   REAL(DP), ALLOCATABLE :: ew(:)
-  !$acc declare device_resident(ew)
+  !!$acc declare device_resident(ew)
     ! eigenvalues of the reduced hamiltonian
   COMPLEX(DP), ALLOCATABLE :: psi(:,:), hpsi(:,:), spsi(:,:)
     ! work space, contains psi
@@ -114,9 +117,9 @@ SUBROUTINE cegterg( h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
   INTEGER :: i,j,k
   ! GPU stream management
   INTEGER :: async_id
-  INTEGER(kind=8) :: mycudaStream
+  INTEGER(kind=cuda_stream_kind) :: mycudaStream, prova
 #if defined(__CUDA)
-  type(cublasHandle) :: myblasHandle
+  type(cublasHandle) :: myblasHandle(20) 
   INTEGER :: istat_cublas
 #endif
 
@@ -143,8 +146,8 @@ SUBROUTINE cegterg( h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
 #if defined(__CUDA)
   ! Get cuda stream and link cublas to it
   mycudaStream = clock_cuda_stream
-  istat_cublas = cublasCreate(myblasHandle)
-  istat_cublas = cublasSetStream(myblasHandle, mycudaStream)
+  istat_cublas = cublasCreate(myblasHandle(i_batch))
+  istat_cublas = cublasSetStream(myblasHandle(i_batch), mycudaStream)
 #endif
   !$acc data deviceptr(e) async(async_id) 
   !
@@ -196,6 +199,7 @@ SUBROUTINE cegterg( h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
   IF( ierr /= 0 ) &
      CALL errore( ' cegterg ',' cannot allocate vc ', ABS(ierr) )
   ALLOCATE( ew( nvecx ), STAT=ierr )
+  !$acc enter data create(ew) async(async_id) 
   IF( ierr /= 0 ) &
      CALL errore( ' cegterg ',' cannot allocate ew ', ABS(ierr) )
   ALLOCATE( conv( nvec ), STAT=ierr )
@@ -311,9 +315,11 @@ SUBROUTINE cegterg( h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
      !
      !$acc host_data use_device(hc, sc, vc, ew)
      CALL start_clock( 'cegterg:diag' )
+     !call omp_set_lock(cegterg_locker) 
      IF( my_bgrp_id == root_bgrp_id ) THEN
         CALL diaghg( nbase, nvec, hc, sc, nvecx, ew, vc, me_bgrp, root_bgrp, intra_bgrp_comm )
      END IF
+     !call omp_unset_lock(cegterg_locker)
      IF( nbgrp > 1 ) THEN
         CALL mp_bcast( vc, root_bgrp_id, inter_bgrp_comm )
         CALL mp_bcast( ew, root_bgrp_id, inter_bgrp_comm )
@@ -564,11 +570,13 @@ SUBROUTINE cegterg( h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
      !
      ! ... diagonalize the reduced hamiltonian
      !
+     !call omp_set_lock(cegterg_locker) 
      !$acc host_data use_device(hc, sc, vc, ew)
      CALL start_clock( 'cegterg:diag' )
      IF( my_bgrp_id == root_bgrp_id ) THEN
         CALL diaghg( nbase, nvec, hc, sc, nvecx, ew, vc, me_bgrp, root_bgrp, intra_bgrp_comm )
      END IF
+     !call omp_unset_lock(cegterg_locker) 
      IF( nbgrp > 1 ) THEN
         CALL mp_bcast( vc, root_bgrp_id, inter_bgrp_comm )
         CALL mp_bcast( ew, root_bgrp_id, inter_bgrp_comm )
@@ -693,6 +701,7 @@ SUBROUTINE cegterg( h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
      !
   END DO iterate
   !
+  !$acc exit data delete(ew) async(async_id) 
   DEALLOCATE( recv_counts )
   DEALLOCATE( displs )
   DEALLOCATE( conv )
@@ -713,7 +722,7 @@ SUBROUTINE cegterg( h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
   !$acc end data 
   ! Cleanup (Fixed)
 #if defined(__CUDA)
-  istat_cublas = cublasDestroy(myblasHandle)
+  istat_cublas = cublasDestroy(myblasHandle(i_batch))  
 #endif
   !
   CALL stop_clock( 'cegterg' ); !write(*,*) 'stop cegterg' ; FLUSH(6)

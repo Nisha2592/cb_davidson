@@ -1,4 +1,3 @@
-
 set(src_cb
   cb_module.f90 
   command_line_options.f90 
@@ -24,3 +23,8 @@ target_link_libraries(cb_lib
 	qe_fftx
         qe_utilx
         qe_lax)
+if(QE_ENABLE_OPENMP) 
+  target_link_libraries(cb_lib
+	PUBLIC
+        qe_openmp_fortran)
+endif()

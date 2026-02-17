@@ -1,6 +1,7 @@
  subroutine cb_g_psi_batched(npwx, npw, nvec, npol, psi, eig, i_batch)
 
 ! global variables
+  USE mytime, ONLY: clock_thread
   USE cb_module, ONLY : DP
   USE cb_module, ONLY : ekin_batched
   implicit none
@@ -11,9 +12,9 @@
 ! local variables
   integer :: ivec, ig
   real(DP) :: x, denm
-  !$acc  data deviceptr(eig,psi)  
+  !$acc  data deviceptr(eig,psi) async(clock_thread) 
   call start_clock('g_psi')
-  !$acc parallel loop collapse(2) 
+  !$acc parallel loop collapse(2) async(clock_thread) 
   do ivec = 1, nvec
      do ig = 1, npw
         x = (ekin_batched(ig, i_batch) - eig(ivec))

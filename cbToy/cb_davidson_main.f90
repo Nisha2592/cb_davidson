@@ -7,8 +7,9 @@ program cb_davidson_main
    use mp_world,             ONLY : world_comm
    use mp_bands,             ONLY : intra_bgrp_comm, inter_bgrp_comm
 #endif
-   use mytime,               only: t0cpu, clock_label, nclock, clock_thread, clock_cuda_stream             
-   use omp_lib,               only: omp_get_thread_num
+   use mytime,               only: t0cpu, clock_label, nclock, clock_thread, clock_cuda_stream, clock_locker, &
+                                   fftw_locker, cegterg_locker            
+   use omp_lib,               only: omp_get_thread_num, omp_set_lock, omp_unset_lock, omp_init_lock
 #if defined(__CUDA)
    use openacc,               only: acc_get_cuda_stream
    use laxlib_cusolver_handles, ONLY : initialize_cusolver_handles, initialize_laxlib_cuda_stream
@@ -71,6 +72,8 @@ program cb_davidson_main
       clock_thread = i_batch
       clock_cuda_stream = acc_get_cuda_stream(clock_thread)
       call initialize_laxlib_cuda_stream(clock_cuda_stream, clock_thread)
+      call omp_init_lock(cegterg_locker) 
+      call omp_init_lock(fftw_locker) 
       print '("Initialized default stream in thread ",2I5,I24)', omp_get_thread_num(), clock_thread, clock_cuda_stream
    end do 
 #endif
@@ -105,12 +108,14 @@ program cb_davidson_main
        !$acc update device(igk_batched(:,i_batch)) async(clock_thread)
        call init_random_wfcs(npw_batched(i_batch), npwx, nbnd, evc_batched(1,1,i_batch),i_batch)  
        !$acc update device(evc_batched(:,:,i_batch)) async(clock_thread)
-       !$acc host_data use_device(eig_batched)
+       !call omp_set_lock(cegterg_locker) 
+       !$acc host_data use_device(eig_batched(1,i_batch))
        call cegterg( my_h_psi_batched, cb_s_psi_batched, overlap, cb_g_psi_batched, &
                       npw_batched(i_batch), npwx, nbnd, nbndx, npol, evc_batched(1,1,i_batch), ethr, &
                       eig_batched(1,i_batch), btype, notcnv_batched(i_batch), lrot, dav_iter_batched(i_batch), & 
                       nhpsi_batched(i_batch), i_batch )
        !$acc end host_data  
+       !call omp_unset_lock(cegterg_locker) 
      end do 
      !$omp end parallel 
      call stop_clock('davidson') 
@@ -131,7 +136,7 @@ program cb_davidson_main
      
         call write_bands(eig_batched(1,i_batch),ref)
         write (stdout,*) 'batch', i_batch, 'dav_iter, nhpsi, notcnv, ethr ', &
-                         dav_iter, nhpsi, notcnv, ethr
+                         dav_iter_batched(i_batch), nhpsi_batched(i_batch), notcnv_batched(i_batch), ethr
      end do 
    end do
    

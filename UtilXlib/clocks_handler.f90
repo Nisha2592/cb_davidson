@@ -70,7 +70,7 @@ MODULE mytime
   !$omp threadprivate (clock_thread)
   LOGICAL :: no
 #if defined (_OPENMP) 
-  INTEGER(kind=omp_lock_kind)  :: clock_locker
+  INTEGER(kind=omp_lock_kind)  :: clock_locker, cegterg_locker, fftw_locker
 #endif
 #if defined (__TRACE)
   INTEGER :: trace_depth = 0
