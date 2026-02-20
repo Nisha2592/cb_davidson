@@ -66,14 +66,14 @@ program cb_davidson_main
    print *, 'nk_batches = ', nk_batches
    !$omp parallel num_threads(nk_batches) default(shared)  shared(t0cpu, nclock, clock_label) 
    call init_clocks(.true.)
+   call omp_init_lock(cegterg_locker) 
+   call omp_init_lock(fftw_locker) 
 #if defined(__CUDA)
    !$omp do 
    do i_batch = 1, nk_batches
       clock_thread = i_batch
       clock_cuda_stream = acc_get_cuda_stream(clock_thread)
       call initialize_laxlib_cuda_stream(clock_cuda_stream, clock_thread)
-      call omp_init_lock(cegterg_locker) 
-      call omp_init_lock(fftw_locker) 
       print '("Initialized default stream in thread ",2I5,I24)', omp_get_thread_num(), clock_thread, clock_cuda_stream
    end do 
 #endif
@@ -102,7 +102,7 @@ program cb_davidson_main
        !clock thread is declared threadprivate in the module 
        clock_thread = i_batch 
 
-     #if defined(__CUDA) !Fixed
+     #if defined(__CUDA)
    ! Reset stream for this thread in this parallel region
        clock_cuda_stream = acc_get_cuda_stream(clock_thread)
      #endif 
@@ -114,14 +114,18 @@ program cb_davidson_main
        !$acc update device(igk_batched(:,i_batch)) async(clock_thread)
        call init_random_wfcs(npw_batched(i_batch), npwx, nbnd, evc_batched(1,1,i_batch),i_batch)  
        !$acc update device(evc_batched(:,:,i_batch)) async(clock_thread)
-       !call omp_set_lock(cegterg_locker) 
        !$acc host_data use_device(eig_batched(1,i_batch))
+#if defined(__INTERCALATE_CEGTERG)
+       call omp_set_lock(cegterg_locker) 
+#endif
        call cegterg( my_h_psi_batched, cb_s_psi_batched, overlap, cb_g_psi_batched, &
                       npw_batched(i_batch), npwx, nbnd, nbndx, npol, evc_batched(1,1,i_batch), ethr, &
                       eig_batched(1,i_batch), btype, notcnv_batched(i_batch), lrot, dav_iter_batched(i_batch), & 
                       nhpsi_batched(i_batch), i_batch )
        !$acc end host_data  
-       !call omp_unset_lock(cegterg_locker) 
+#if defined(__INTERCALATE_CEGTERG)
+      call omp_unset(cegterg_locker)
+#endif
      end do 
      !$omp end parallel 
      call stop_clock('davidson') 

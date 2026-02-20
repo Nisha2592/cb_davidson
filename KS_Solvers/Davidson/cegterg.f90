@@ -31,6 +31,7 @@ SUBROUTINE cegterg( h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
   !
 #if defined(__CUDA)
   use cublas
+  use cudafor
 #endif
   USE util_param,    ONLY : DP
   USE mp_bands_util, ONLY : intra_bgrp_comm, inter_bgrp_comm, root_bgrp_id,&
@@ -315,11 +316,12 @@ SUBROUTINE cegterg( h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
      !
      !$acc host_data use_device(hc, sc, vc, ew)
      CALL start_clock( 'cegterg:diag' )
-     !call omp_set_lock(cegterg_locker) 
+     call omp_set_lock(cegterg_locker) 
      IF( my_bgrp_id == root_bgrp_id ) THEN
         CALL diaghg( nbase, nvec, hc, sc, nvecx, ew, vc, me_bgrp, root_bgrp, intra_bgrp_comm )
      END IF
-     !call omp_unset_lock(cegterg_locker)
+     !$acc wait(async_id) 
+     call omp_unset_lock(cegterg_locker)
      IF( nbgrp > 1 ) THEN
         CALL mp_bcast( vc, root_bgrp_id, inter_bgrp_comm )
         CALL mp_bcast( ew, root_bgrp_id, inter_bgrp_comm )
@@ -570,13 +572,14 @@ SUBROUTINE cegterg( h_psi_ptr, s_psi_ptr, uspp, g_psi_ptr, &
      !
      ! ... diagonalize the reduced hamiltonian
      !
-     !call omp_set_lock(cegterg_locker) 
+     call omp_set_lock(cegterg_locker) 
      !$acc host_data use_device(hc, sc, vc, ew)
      CALL start_clock( 'cegterg:diag' )
      IF( my_bgrp_id == root_bgrp_id ) THEN
         CALL diaghg( nbase, nvec, hc, sc, nvecx, ew, vc, me_bgrp, root_bgrp, intra_bgrp_comm )
      END IF
-     !call omp_unset_lock(cegterg_locker) 
+     !$acc wait(async_id)
+     call omp_unset_lock(cegterg_locker) 
      IF( nbgrp > 1 ) THEN
         CALL mp_bcast( vc, root_bgrp_id, inter_bgrp_comm )
         CALL mp_bcast( ew, root_bgrp_id, inter_bgrp_comm )
