@@ -102,7 +102,7 @@ program cb_davidson_main
        !clock thread is declared threadprivate in the module 
        clock_thread = i_batch 
 
-     #if defined(__CUDA)
+     #if defined(__CUDA) 
    ! Reset stream for this thread in this parallel region
        clock_cuda_stream = acc_get_cuda_stream(clock_thread)
      #endif 
