@@ -23,12 +23,12 @@ subroutine my_h_psi_batched(npwx, npw, nbnd, psi, hpsi, i_batch)
     !$acc host_data use_device(fft_array_batched) 
     call invfft( 'Wave', fft_array_batched(:,i_batch), dfft) 
     !$acc end host_data 
-    call omp_unset_lock(fftw_locker) 
+    !call omp_unset_lock(fftw_locker) 
     !$acc parallel loop async(clock_thread)
     do ir = 1, dfft%nnr 
        fft_array_batched(ir, i_batch) = fft_array_batched(ir,i_batch) * vloc(ir) 
     end do 
-    call omp_set_lock(fftw_locker) 
+    !call omp_set_lock(fftw_locker) 
     !$acc host_data use_device(fft_array_batched) 
     call fwfft('Wave', fft_array_batched(:,i_batch), dfft) 
     !$acc end host_data
