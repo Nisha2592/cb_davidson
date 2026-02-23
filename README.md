@@ -138,7 +138,7 @@ integration into the production codebase.
 
 - NVHPC >= 24.5 (for OpenACC + CUDA interoperability)
 - FFTW 3.x
-- OpenBLAS or Intel MKL
+- OpenBLAS
 - NVIDIA GPU with Compute Capability >= 8.0 (A100 recommended)
 - CUDA >= 11.0
 
@@ -147,6 +147,8 @@ integration into the production codebase.
 ## Author
 
 Pietro Delugas- SISSA (Supervisor)
+
 Nisha - MHPC, ICTP Trieste
+
 Thesis: *Strategies for GPU Optimized Small Size Jobs in Quantum ESPRESSO
 Combining OpenMP and OpenACC*
